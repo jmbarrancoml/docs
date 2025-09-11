@@ -1,0 +1,1019 @@
+---
+title: "Embeddings and representations"
+description: "How neural networks create meaningful, dense representations of complex data"
+---
+
+## Introduction to embeddings
+
+Embeddings are dense, low-dimensional vector representations that capture semantic meaning and relationships in data. They transform discrete, high-dimensional, or sparse inputs (like words, images, or graphs) into continuous vectors that neural networks can effectively process and reason about.
+
+## The representation problem
+
+### From discrete to continuous
+Many real-world entities are discrete:
+- Words in natural language
+- Categories in databases 
+- Users and items in recommendation systems
+- Atoms and bonds in molecules
+- Genes in biological sequences
+
+Neural networks work best with continuous, dense vectors. Embeddings bridge this gap by learning meaningful continuous representations.
+
+### Why embeddings matter
+1. **Dimensionality reduction**: Convert high-dimensional sparse data to dense representations
+2. **Semantic similarity**: Similar entities have similar embeddings
+3. **Transferability**: Learned representations can be reused across tasks
+4. **Compositionality**: Embeddings can be combined and transformed
+5. **Efficiency**: Dense vectors are computationally more efficient than sparse representations
+
+## Word embeddings
+
+### One-hot encoding limitations
+Traditional word representations use one-hot vectors:
+
+```python
+import numpy as np
+import torch
+import torch.nn as nn
+from sklearn.metrics.pairwise import cosine_similarity
+
+# One-hot encoding example
+vocab = ["the", "cat", "sat", "on", "mat", "dog", "ran"]
+vocab_size = len(vocab)
+
+def create_one_hot(word, vocab):
+    """Create one-hot vector for a word"""
+    index = vocab.index(word)
+    one_hot = np.zeros(len(vocab))
+    one_hot[index] = 1
+    return one_hot
+
+cat_vector = create_one_hot("cat", vocab)
+dog_vector = create_one_hot("dog", vocab)
+
+print(f"Cat vector: {cat_vector}")
+print(f"Dog vector: {dog_vector}")
+print(f"Similarity: {cosine_similarity([cat_vector], [dog_vector])[0, 0]}")
+# Output: 0.0 (no similarity despite both being animals)
+```
+
+**Problems with one-hot encoding:**
+- **Sparse**: Mostly zeros, inefficient storage
+- **No semantic information**: All words are equally dissimilar
+- **Curse of dimensionality**: Vector size grows with vocabulary
+- **No generalization**: Can't handle unseen words
+
+### Word2Vec: learning semantic representations
+
+#### Skip-gram model
+Predicts context words given a center word:
+
+```python
+class SkipGram(nn.Module):
+    def __init__(self, vocab_size, embedding_dim):
+        super().__init__()
+        self.center_embeddings = nn.Embedding(vocab_size, embedding_dim)
+        self.context_embeddings = nn.Embedding(vocab_size, embedding_dim)
+        
+    def forward(self, center_word, context_word):
+        # Get embeddings
+        center_embed = self.center_embeddings(center_word)
+        context_embed = self.context_embeddings(context_word)
+        
+        # Compute similarity score
+        score = torch.sum(center_embed * context_embed, dim=1)
+        
+        return score
+    
+    def get_word_embedding(self, word_idx):
+        """Get the learned embedding for a word"""
+        return self.center_embeddings(word_idx)
+
+def train_skip_gram(model, corpus, window_size=2, epochs=100):
+    """Train skip-gram model on corpus"""
+    optimizer = torch.optim.Adam(model.parameters())
+    
+    for epoch in range(epochs):
+        total_loss = 0
+        
+        for sentence in corpus:
+            for i, center_word in enumerate(sentence):
+                # Get context window
+                start = max(0, i - window_size)
+                end = min(len(sentence), i + window_size + 1)
+                
+                for j in range(start, end):
+                    if i != j:  # Skip center word itself
+                        context_word = sentence[j]
+                        
+                        # Positive example
+                        pos_score = model(center_word, context_word)
+                        
+                        # Negative sampling (simplified)
+                        neg_word = torch.randint(0, model.center_embeddings.num_embeddings, (1,))
+                        neg_score = model(center_word, neg_word)
+                        
+                        # Loss: maximize positive, minimize negative
+                        loss = -torch.log(torch.sigmoid(pos_score)) - torch.log(torch.sigmoid(-neg_score))
+                        
+                        optimizer.zero_grad()
+                        loss.backward()
+                        optimizer.step()
+                        
+                        total_loss += loss.item()
+        
+        if epoch % 20 == 0:
+            print(f"Epoch {epoch}, Loss: {total_loss:.4f}")
+```
+
+#### Continuous Bag of Words (CBOW)
+Predicts center word from context:
+
+```python
+class CBOW(nn.Module):
+    def __init__(self, vocab_size, embedding_dim):
+        super().__init__()
+        self.embeddings = nn.Embedding(vocab_size, embedding_dim)
+        self.linear = nn.Linear(embedding_dim, vocab_size)
+        
+    def forward(self, context_words):
+        # Average context embeddings
+        context_embeds = self.embeddings(context_words)
+        avg_embed = torch.mean(context_embeds, dim=1)
+        
+        # Predict center word
+        logits = self.linear(avg_embed)
+        
+        return logits
+```
+
+### Advanced word embeddings
+
+#### GloVe (Global Vectors)
+Combines global matrix factorization with local context windows:
+
+```python
+def build_cooccurrence_matrix(corpus, vocab_to_idx, window_size=5):
+    """Build word co-occurrence matrix"""
+    vocab_size = len(vocab_to_idx)
+    cooccur_matrix = np.zeros((vocab_size, vocab_size))
+    
+    for sentence in corpus:
+        for i, center_word in enumerate(sentence):
+            center_idx = vocab_to_idx[center_word]
+            
+            # Count co-occurrences within window
+            start = max(0, i - window_size)
+            end = min(len(sentence), i + window_size + 1)
+            
+            for j in range(start, end):
+                if i != j:
+                    context_word = sentence[j]
+                    context_idx = vocab_to_idx[context_word]
+                    
+                    # Weight by distance
+                    distance = abs(i - j)
+                    weight = 1.0 / distance
+                    
+                    cooccur_matrix[center_idx, context_idx] += weight
+    
+    return cooccur_matrix
+
+class GloVeModel(nn.Module):
+    def __init__(self, vocab_size, embedding_dim):
+        super().__init__()
+        self.center_embeddings = nn.Embedding(vocab_size, embedding_dim)
+        self.context_embeddings = nn.Embedding(vocab_size, embedding_dim)
+        self.center_bias = nn.Embedding(vocab_size, 1)
+        self.context_bias = nn.Embedding(vocab_size, 1)
+        
+    def forward(self, center_idx, context_idx, cooccur_count):
+        # Get embeddings and biases
+        center_embed = self.center_embeddings(center_idx)
+        context_embed = self.context_embeddings(context_idx)
+        center_b = self.center_bias(center_idx).squeeze()
+        context_b = self.context_bias(context_idx).squeeze()
+        
+        # GloVe objective: predict log co-occurrence
+        prediction = torch.sum(center_embed * context_embed, dim=1) + center_b + context_b
+        target = torch.log(cooccur_count + 1e-10)
+        
+        return prediction, target
+```
+
+#### Subword embeddings (FastText)
+Handle out-of-vocabulary words using character n-grams:
+
+```python
+class FastText(nn.Module):
+    def __init__(self, vocab_size, embedding_dim, min_n=3, max_n=6):
+        super().__init__()
+        self.min_n = min_n
+        self.max_n = max_n
+        
+        # Word embeddings
+        self.word_embeddings = nn.Embedding(vocab_size, embedding_dim)
+        
+        # Character n-gram embeddings (simplified)
+        self.ngram_embeddings = nn.Embedding(100000, embedding_dim)  # Large vocab for n-grams
+        
+    def get_ngrams(self, word):
+        """Extract character n-grams from word"""
+        word = f"<{word}>"  # Add boundary markers
+        ngrams = []
+        
+        for n in range(self.min_n, self.max_n + 1):
+            for i in range(len(word) - n + 1):
+                ngram = word[i:i + n]
+                ngrams.append(hash(ngram) % 100000)  # Simple hash
+        
+        return ngrams
+    
+    def forward(self, word_idx, word_text=None):
+        # Word embedding
+        word_embed = self.word_embeddings(word_idx)
+        
+        if word_text:
+            # Add subword information
+            ngram_indices = self.get_ngrams(word_text)
+            ngram_embeds = self.ngram_embeddings(torch.tensor(ngram_indices))
+            subword_embed = torch.mean(ngram_embeds, dim=0)
+            
+            return word_embed + subword_embed
+        
+        return word_embed
+```
+
+## Contextual embeddings
+
+### Static vs contextual
+- **Static embeddings** (Word2Vec, GloVe): One embedding per word type
+- **Contextual embeddings** (ELMo, BERT): Different embeddings based on context
+
+```python
+def demonstrate_contextual_difference():
+    """Show how context changes word meaning"""
+    sentences = [
+        "The bank of the river was muddy",
+        "I went to the bank to deposit money",
+        "The bat flew at night", 
+        "He swung the baseball bat"
+    ]
+    
+    # With static embeddings, "bank" and "bat" would have 
+    # the same representation regardless of context
+    
+    # With contextual embeddings, these would be different:
+    # bank₁ (financial) ≠ bank₂ (river)
+    # bat₁ (animal) ≠ bat₂ (sports equipment)
+```
+
+### ELMo (Embeddings from Language Models)
+Uses bidirectional LSTMs to create context-dependent embeddings:
+
+```python
+class ELMoStyleEmbedder(nn.Module):
+    def __init__(self, vocab_size, embedding_dim, hidden_dim, num_layers=2):
+        super().__init__()
+        
+        self.char_cnn = nn.Conv1d(256, embedding_dim, kernel_size=3, padding=1)  # Character-level
+        self.forward_lstm = nn.LSTM(embedding_dim, hidden_dim, num_layers, batch_first=True)
+        self.backward_lstm = nn.LSTM(embedding_dim, hidden_dim, num_layers, batch_first=True)
+        
+        # Learnable combination weights
+        self.gamma = nn.Parameter(torch.ones(1))
+        self.layer_weights = nn.Parameter(torch.ones(num_layers + 1))  # +1 for embeddings
+        
+    def forward(self, input_sequence):
+        batch_size, seq_len = input_sequence.shape
+        
+        # Character-level embeddings (simplified)
+        char_embeds = self.char_cnn(input_sequence.float().unsqueeze(1))
+        char_embeds = char_embeds.transpose(1, 2)
+        
+        # Forward LSTM
+        forward_out, _ = self.forward_lstm(char_embeds)
+        
+        # Backward LSTM (reverse sequence)
+        reversed_embeds = torch.flip(char_embeds, [1])
+        backward_out, _ = self.backward_lstm(reversed_embeds)
+        backward_out = torch.flip(backward_out, [1])
+        
+        # Combine all layers
+        all_layers = [char_embeds, forward_out, backward_out]
+        
+        # Weighted combination
+        normalized_weights = torch.softmax(self.layer_weights, dim=0)
+        combined = sum(w * layer for w, layer in zip(normalized_weights, all_layers))
+        
+        return self.gamma * combined
+```
+
+### Transformer-based embeddings (BERT)
+
+```python
+class BERTEmbedder(nn.Module):
+    def __init__(self, vocab_size, d_model, num_heads, num_layers):
+        super().__init__()
+        
+        self.token_embedding = nn.Embedding(vocab_size, d_model)
+        self.position_embedding = nn.Embedding(512, d_model)  # Max length 512
+        self.segment_embedding = nn.Embedding(2, d_model)  # For sentence pairs
+        
+        # Transformer encoder layers
+        self.transformer_layers = nn.ModuleList([
+            TransformerEncoderLayer(d_model, num_heads)
+            for _ in range(num_layers)
+        ])
+        
+        self.layer_norm = nn.LayerNorm(d_model)
+        
+    def forward(self, input_ids, segment_ids=None, position_ids=None):
+        seq_len = input_ids.size(1)
+        
+        if position_ids is None:
+            position_ids = torch.arange(seq_len).unsqueeze(0)
+            
+        if segment_ids is None:
+            segment_ids = torch.zeros_like(input_ids)
+        
+        # Combine embeddings
+        token_embeds = self.token_embedding(input_ids)
+        pos_embeds = self.position_embedding(position_ids)
+        seg_embeds = self.segment_embedding(segment_ids)
+        
+        embeddings = token_embeds + pos_embeds + seg_embeds
+        embeddings = self.layer_norm(embeddings)
+        
+        # Pass through transformer layers
+        hidden_states = []
+        x = embeddings
+        
+        for layer in self.transformer_layers:
+            x = layer(x)
+            hidden_states.append(x)
+        
+        return x, hidden_states  # Return final and all intermediate representations
+```
+
+## Specialized embeddings
+
+### Positional embeddings
+
+#### Sinusoidal positional encoding
+```python
+class SinusoidalPositionalEmbedding(nn.Module):
+    def __init__(self, d_model, max_length=5000):
+        super().__init__()
+        
+        pe = torch.zeros(max_length, d_model)
+        position = torch.arange(0, max_length).unsqueeze(1).float()
+        
+        div_term = torch.exp(torch.arange(0, d_model, 2).float() *
+                           -(math.log(10000.0) / d_model))
+        
+        pe[:, 0::2] = torch.sin(position * div_term)
+        pe[:, 1::2] = torch.cos(position * div_term)
+        
+        self.register_buffer('pe', pe)
+        
+    def forward(self, x):
+        return x + self.pe[:x.size(1)]
+
+def visualize_positional_encoding():
+    """Visualize how positional encoding varies with position and dimension"""
+    pe_layer = SinusoidalPositionalEmbedding(128, 100)
+    
+    import matplotlib.pyplot as plt
+    
+    # Get positional encodings
+    pos_encodings = pe_layer.pe[:50, :20].numpy()  # First 50 positions, 20 dimensions
+    
+    plt.figure(figsize=(12, 8))
+    plt.imshow(pos_encodings.T, aspect='auto', cmap='RdBu')
+    plt.colorbar()
+    plt.xlabel('Position')
+    plt.ylabel('Embedding dimension')
+    plt.title('Sinusoidal positional encoding patterns')
+    plt.show()
+```
+
+#### Learned positional embeddings
+```python
+class LearnedPositionalEmbedding(nn.Module):
+    def __init__(self, max_length, d_model):
+        super().__init__()
+        self.position_embeddings = nn.Embedding(max_length, d_model)
+        
+    def forward(self, x):
+        seq_len = x.size(1)
+        positions = torch.arange(seq_len, device=x.device)
+        pos_embeds = self.position_embeddings(positions)
+        
+        return x + pos_embeds.unsqueeze(0)
+```
+
+#### Rotary position embedding (RoPE)
+Used in modern models like LLaMA:
+
+```python
+class RotaryPositionalEmbedding(nn.Module):
+    def __init__(self, dim, max_seq_len=2048, base=10000):
+        super().__init__()
+        
+        inv_freq = 1. / (base ** (torch.arange(0, dim, 2).float() / dim))
+        self.register_buffer('inv_freq', inv_freq)
+        
+        # Cache for efficiency
+        self.max_seq_len_cached = max_seq_len
+        t = torch.arange(max_seq_len).type_as(self.inv_freq)
+        freqs = torch.einsum('i,j->ij', t, self.inv_freq)
+        emb = torch.cat((freqs, freqs), dim=-1)
+        
+        self.register_buffer('cos_cached', emb.cos())
+        self.register_buffer('sin_cached', emb.sin())
+        
+    def apply_rotary_pos_emb(self, x, cos, sin):
+        # Split last dimension in half
+        x1, x2 = x[..., ::2], x[..., 1::2]
+        
+        # Apply rotation
+        return torch.cat([
+            x1 * cos - x2 * sin,
+            x2 * cos + x1 * sin
+        ], dim=-1)
+    
+    def forward(self, x, seq_len):
+        cos = self.cos_cached[:seq_len]
+        sin = self.sin_cached[:seq_len]
+        
+        return self.apply_rotary_pos_emb(x, cos, sin)
+```
+
+### Graph embeddings
+
+For representing nodes and edges in graph structures:
+
+```python
+class GraphEmbedding(nn.Module):
+    def __init__(self, num_nodes, num_edge_types, embedding_dim):
+        super().__init__()
+        
+        self.node_embeddings = nn.Embedding(num_nodes, embedding_dim)
+        self.edge_type_embeddings = nn.Embedding(num_edge_types, embedding_dim)
+        
+    def forward(self, node_ids, edge_types, adjacency_matrix):
+        # Node embeddings
+        node_embeds = self.node_embeddings(node_ids)
+        
+        # Edge type embeddings
+        edge_embeds = self.edge_type_embeddings(edge_types)
+        
+        # Graph convolution (simplified)
+        aggregated = torch.matmul(adjacency_matrix, node_embeds)
+        
+        return aggregated + node_embeds  # Residual connection
+
+class GraphAttentionNetwork(nn.Module):
+    def __init__(self, input_dim, hidden_dim, num_heads=8):
+        super().__init__()
+        self.num_heads = num_heads
+        self.hidden_dim = hidden_dim
+        
+        self.W = nn.Linear(input_dim, hidden_dim * num_heads)
+        self.attention = nn.Linear(hidden_dim * 2, 1)
+        
+    def forward(self, node_features, adjacency_matrix):
+        batch_size, num_nodes, input_dim = node_features.shape
+        
+        # Linear transformation
+        h = self.W(node_features)  # [batch, num_nodes, hidden_dim * num_heads]
+        h = h.view(batch_size, num_nodes, self.num_heads, self.hidden_dim)
+        
+        # Compute attention coefficients
+        attention_scores = []
+        
+        for head in range(self.num_heads):
+            h_head = h[:, :, head, :]  # [batch, num_nodes, hidden_dim]
+            
+            # Compute pairwise attention
+            scores = torch.zeros(batch_size, num_nodes, num_nodes)
+            
+            for i in range(num_nodes):
+                for j in range(num_nodes):
+                    if adjacency_matrix[i, j] > 0:  # Only connected nodes
+                        concat_features = torch.cat([h_head[:, i], h_head[:, j]], dim=-1)
+                        score = self.attention(concat_features)
+                        scores[:, i, j] = score.squeeze(-1)
+            
+            attention_scores.append(F.softmax(scores, dim=-1))
+        
+        # Aggregate across heads
+        final_attention = sum(attention_scores) / self.num_heads
+        
+        # Apply attention to features
+        output = torch.matmul(final_attention, node_features)
+        
+        return output
+```
+
+## Image embeddings
+
+### Convolutional feature maps
+CNN layers create spatial embeddings:
+
+```python
+class ImageEmbedder(nn.Module):
+    def __init__(self, input_channels=3, embedding_dim=512):
+        super().__init__()
+        
+        # Convolutional feature extractor
+        self.features = nn.Sequential(
+            nn.Conv2d(input_channels, 64, 3, padding=1),
+            nn.ReLU(),
+            nn.MaxPool2d(2),
+            
+            nn.Conv2d(64, 128, 3, padding=1),
+            nn.ReLU(),
+            nn.MaxPool2d(2),
+            
+            nn.Conv2d(128, 256, 3, padding=1),
+            nn.ReLU(),
+            nn.MaxPool2d(2),
+            
+            nn.Conv2d(256, 512, 3, padding=1),
+            nn.ReLU(),
+            nn.AdaptiveAvgPool2d((1, 1))
+        )
+        
+        # Global image embedding
+        self.global_embed = nn.Linear(512, embedding_dim)
+        
+    def forward(self, images):
+        # Extract features
+        features = self.features(images)  # [batch, 512, 1, 1]
+        features = features.view(features.size(0), -1)  # Flatten
+        
+        # Global embedding
+        global_embed = self.global_embed(features)
+        
+        return global_embed
+
+def extract_patch_embeddings(image, patch_size=16):
+    """Extract patch embeddings like Vision Transformer"""
+    batch_size, channels, height, width = image.shape
+    
+    # Divide image into patches
+    num_patches_h = height // patch_size
+    num_patches_w = width // patch_size
+    
+    # Reshape to patches
+    patches = image.unfold(2, patch_size, patch_size).unfold(3, patch_size, patch_size)
+    patches = patches.contiguous().view(
+        batch_size, channels, num_patches_h * num_patches_w, patch_size, patch_size
+    )
+    patches = patches.permute(0, 2, 1, 3, 4)  # [batch, num_patches, channels, patch_h, patch_w]
+    patches = patches.contiguous().view(
+        batch_size, num_patches_h * num_patches_w, channels * patch_size * patch_size
+    )
+    
+    return patches
+```
+
+### CLIP-style multimodal embeddings
+
+```python
+class MultimodalEmbedder(nn.Module):
+    def __init__(self, image_dim, text_dim, embedding_dim):
+        super().__init__()
+        
+        # Image encoder
+        self.image_encoder = nn.Sequential(
+            nn.Linear(image_dim, embedding_dim),
+            nn.ReLU(),
+            nn.Linear(embedding_dim, embedding_dim)
+        )
+        
+        # Text encoder  
+        self.text_encoder = nn.Sequential(
+            nn.Linear(text_dim, embedding_dim),
+            nn.ReLU(),
+            nn.Linear(embedding_dim, embedding_dim)
+        )
+        
+        # Temperature parameter for contrastive learning
+        self.temperature = nn.Parameter(torch.ones([]) * np.log(1 / 0.07))
+        
+    def forward(self, images, texts):
+        # Encode images and texts
+        image_embeds = self.image_encoder(images)
+        text_embeds = self.text_encoder(texts)
+        
+        # L2 normalize embeddings
+        image_embeds = F.normalize(image_embeds, p=2, dim=-1)
+        text_embeds = F.normalize(text_embeds, p=2, dim=-1)
+        
+        return image_embeds, text_embeds
+    
+    def compute_similarity(self, image_embeds, text_embeds):
+        """Compute similarity matrix for contrastive learning"""
+        return torch.matmul(image_embeds, text_embeds.T) * torch.exp(self.temperature)
+```
+
+## Scientific embeddings
+
+### Molecular embeddings
+
+```python
+class MolecularEmbedder(nn.Module):
+    def __init__(self, atom_vocab_size, bond_vocab_size, embedding_dim):
+        super().__init__()
+        
+        self.atom_embedding = nn.Embedding(atom_vocab_size, embedding_dim)
+        self.bond_embedding = nn.Embedding(bond_vocab_size, embedding_dim)
+        
+        # Graph neural network layers
+        self.gnn_layers = nn.ModuleList([
+            GraphAttentionNetwork(embedding_dim, embedding_dim)
+            for _ in range(3)
+        ])
+        
+        # Molecular property prediction
+        self.property_predictor = nn.Linear(embedding_dim, 1)
+        
+    def forward(self, atom_types, bond_types, adjacency_matrix):
+        # Initial atom embeddings
+        atom_embeds = self.atom_embedding(atom_types)
+        
+        # Apply GNN layers
+        for gnn_layer in self.gnn_layers:
+            atom_embeds = gnn_layer(atom_embeds, adjacency_matrix)
+        
+        # Global molecular embedding (mean pooling)
+        molecular_embed = torch.mean(atom_embeds, dim=1)
+        
+        # Predict molecular properties
+        properties = self.property_predictor(molecular_embed)
+        
+        return molecular_embed, properties
+
+def smiles_to_embedding(smiles_string):
+    """Convert SMILES string to molecular embedding (simplified)"""
+    # This would typically use RDKit or similar chemistry library
+    # to parse SMILES and extract atoms/bonds
+    
+    # Simplified tokenization
+    atom_tokens = list(smiles_string.replace('(', '').replace(')', ''))
+    
+    # Map to indices (simplified)
+    atom_vocab = {'C': 0, 'N': 1, 'O': 2, 'S': 3, '=': 4, '#': 5}
+    atom_indices = [atom_vocab.get(token, 0) for token in atom_tokens]
+    
+    return torch.tensor(atom_indices)
+```
+
+### Protein sequence embeddings
+
+```python
+class ProteinEmbedder(nn.Module):
+    def __init__(self, aa_vocab_size=21, embedding_dim=512):
+        super().__init__()
+        
+        # Amino acid embeddings
+        self.aa_embedding = nn.Embedding(aa_vocab_size, embedding_dim)
+        
+        # Bidirectional LSTM for sequence context
+        self.lstm = nn.LSTM(embedding_dim, embedding_dim // 2, 
+                           bidirectional=True, batch_first=True)
+        
+        # Secondary structure prediction
+        self.ss_predictor = nn.Linear(embedding_dim, 3)  # Helix, sheet, coil
+        
+        # Contact prediction
+        self.contact_predictor = nn.Linear(embedding_dim * 2, 1)
+        
+    def forward(self, aa_sequence):
+        # Amino acid embeddings
+        embeds = self.aa_embedding(aa_sequence)
+        
+        # LSTM for sequential context
+        lstm_out, _ = self.lstm(embeds)
+        
+        # Secondary structure prediction
+        ss_logits = self.ss_predictor(lstm_out)
+        
+        # Contact prediction (simplified)
+        seq_len = aa_sequence.size(1)
+        contact_probs = []
+        
+        for i in range(seq_len):
+            for j in range(i + 1, seq_len):
+                pair_embed = torch.cat([lstm_out[:, i], lstm_out[:, j]], dim=-1)
+                contact_prob = torch.sigmoid(self.contact_predictor(pair_embed))
+                contact_probs.append(contact_prob)
+        
+        return lstm_out, ss_logits, contact_probs
+```
+
+### Scientific paper embeddings (EderSpark application)
+
+```python
+class ScientificPaperEmbedder(nn.Module):
+    def __init__(self, vocab_size, embedding_dim, num_fields=50):
+        super().__init__()
+        
+        # Text embeddings
+        self.word_embedding = nn.Embedding(vocab_size, embedding_dim)
+        self.position_embedding = nn.Embedding(1000, embedding_dim)
+        
+        # Scientific field embeddings
+        self.field_embedding = nn.Embedding(num_fields, embedding_dim)
+        
+        # Hierarchical attention for papers
+        self.word_attention = nn.MultiheadAttention(embedding_dim, num_heads=8)
+        self.sentence_attention = nn.MultiheadAttention(embedding_dim, num_heads=8)
+        self.section_attention = nn.Linear(embedding_dim, 1)
+        
+        # Citation embeddings
+        self.citation_encoder = nn.LSTM(embedding_dim, embedding_dim, batch_first=True)
+        
+        # Final paper representation
+        self.paper_projector = nn.Linear(embedding_dim * 3, embedding_dim)
+        
+    def encode_text_hierarchy(self, paper_text):
+        """Encode paper text with hierarchical attention"""
+        # Word embeddings with position
+        word_embeds = self.word_embedding(paper_text)
+        positions = torch.arange(paper_text.size(1)).unsqueeze(0)
+        pos_embeds = self.position_embedding(positions)
+        
+        text_embeds = word_embeds + pos_embeds
+        
+        # Word-level attention
+        attended_words, _ = self.word_attention(text_embeds, text_embeds, text_embeds)
+        
+        # Sentence-level representation (simplified)
+        sentence_repr = torch.mean(attended_words, dim=1)
+        
+        return sentence_repr
+    
+    def forward(self, paper_text, field_id, citations):
+        # Text representation
+        text_repr = self.encode_text_hierarchy(paper_text)
+        
+        # Field representation
+        field_repr = self.field_embedding(field_id)
+        
+        # Citation context
+        if citations is not None:
+            citation_embeds = self.word_embedding(citations)
+            citation_context, _ = self.citation_encoder(citation_embeds)
+            citation_repr = torch.mean(citation_context, dim=1)
+        else:
+            citation_repr = torch.zeros_like(text_repr)
+        
+        # Combine all representations
+        combined_repr = torch.cat([text_repr, field_repr, citation_repr], dim=-1)
+        paper_embedding = self.paper_projector(combined_repr)
+        
+        return F.normalize(paper_embedding, p=2, dim=-1)  # L2 normalize
+
+class SemanticSearchIndex:
+    def __init__(self, embedder, papers_database):
+        self.embedder = embedder
+        self.papers_database = papers_database
+        self.paper_embeddings = None
+        
+    def build_index(self):
+        """Build search index from all papers"""
+        embeddings = []
+        
+        for paper in self.papers_database:
+            with torch.no_grad():
+                embedding = self.embedder(
+                    paper['text'], 
+                    paper['field_id'], 
+                    paper.get('citations')
+                )
+                embeddings.append(embedding)
+        
+        self.paper_embeddings = torch.stack(embeddings)
+        
+    def search(self, query_text, top_k=10):
+        """Search for most relevant papers"""
+        # Encode query
+        with torch.no_grad():
+            query_embedding = self.embedder(query_text, None, None)
+        
+        # Compute similarities
+        similarities = torch.matmul(query_embedding, self.paper_embeddings.T)
+        
+        # Get top-k results
+        top_scores, top_indices = torch.topk(similarities, k=top_k)
+        
+        results = []
+        for score, idx in zip(top_scores, top_indices):
+            results.append({
+                'paper': self.papers_database[idx],
+                'relevance_score': score.item()
+            })
+        
+        return results
+```
+
+## Embedding evaluation and analysis
+
+### Intrinsic evaluation
+Assess embedding quality directly:
+
+```python
+def evaluate_word_embeddings(embeddings, word_to_idx):
+    """Evaluate word embeddings on various tasks"""
+    
+    def word_similarity_task():
+        """Test on word similarity benchmarks"""
+        # SimLex-999, WordSim-353, etc.
+        word_pairs = [
+            ('cat', 'dog', 7.35),    # Human similarity rating
+            ('car', 'automobile', 9.2),
+            ('computer', 'keyboard', 7.62)
+        ]
+        
+        correlations = []
+        for word1, word2, human_score in word_pairs:
+            if word1 in word_to_idx and word2 in word_to_idx:
+                idx1, idx2 = word_to_idx[word1], word_to_idx[word2]
+                
+                embed1 = embeddings[idx1]
+                embed2 = embeddings[idx2]
+                
+                # Cosine similarity
+                cos_sim = torch.cosine_similarity(embed1, embed2, dim=0)
+                correlations.append((cos_sim.item(), human_score))
+        
+        # Compute correlation
+        model_scores = [x[0] for x in correlations]
+        human_scores = [x[1] for x in correlations]
+        
+        correlation = np.corrcoef(model_scores, human_scores)[0, 1]
+        return correlation
+    
+    def word_analogy_task():
+        """Test on word analogy tasks: A is to B as C is to D"""
+        analogies = [
+            ('man', 'woman', 'king', 'queen'),
+            ('paris', 'france', 'london', 'england'),
+            ('cat', 'cats', 'dog', 'dogs')
+        ]
+        
+        correct = 0
+        total = 0
+        
+        for a, b, c, expected_d in analogies:
+            if all(word in word_to_idx for word in [a, b, c, expected_d]):
+                # Vector arithmetic: B - A + C ≈ D
+                embed_a = embeddings[word_to_idx[a]]
+                embed_b = embeddings[word_to_idx[b]]
+                embed_c = embeddings[word_to_idx[c]]
+                
+                target_vector = embed_b - embed_a + embed_c
+                
+                # Find most similar word (excluding A, B, C)
+                similarities = torch.matmul(embeddings, target_vector)
+                
+                # Get top candidate
+                _, top_idx = torch.topk(similarities, k=1)
+                predicted_word = list(word_to_idx.keys())[top_idx.item()]
+                
+                if predicted_word == expected_d:
+                    correct += 1
+                total += 1
+        
+        return correct / total if total > 0 else 0
+    
+    similarity_corr = word_similarity_task()
+    analogy_acc = word_analogy_task()
+    
+    return {
+        'similarity_correlation': similarity_corr,
+        'analogy_accuracy': analogy_acc
+    }
+
+def visualize_embeddings_2d(embeddings, labels, method='tsne'):
+    """Visualize high-dimensional embeddings in 2D"""
+    from sklearn.manifold import TSNE
+    from sklearn.decomposition import PCA
+    import matplotlib.pyplot as plt
+    
+    if method == 'tsne':
+        reducer = TSNE(n_components=2, random_state=42)
+    else:
+        reducer = PCA(n_components=2)
+    
+    # Reduce dimensionality
+    embeddings_2d = reducer.fit_transform(embeddings.numpy())
+    
+    # Plot
+    plt.figure(figsize=(12, 8))
+    scatter = plt.scatter(embeddings_2d[:, 0], embeddings_2d[:, 1], alpha=0.6)
+    
+    # Add labels for some points
+    for i, label in enumerate(labels[:50]):  # Show first 50 labels
+        plt.annotate(label, (embeddings_2d[i, 0], embeddings_2d[i, 1]))
+    
+    plt.title(f'Embedding visualization ({method.upper()})')
+    plt.xlabel('Component 1')
+    plt.ylabel('Component 2')
+    plt.show()
+```
+
+### Probing tasks
+Test what linguistic knowledge embeddings capture:
+
+```python
+class EmbeddingProbe(nn.Module):
+    def __init__(self, embedding_dim, num_classes):
+        super().__init__()
+        self.classifier = nn.Linear(embedding_dim, num_classes)
+        
+    def forward(self, embeddings):
+        return self.classifier(embeddings)
+
+def probe_embeddings(embeddings, labels, task_name):
+    """Probe embeddings for specific linguistic knowledge"""
+    
+    # Split data
+    train_size = int(0.8 * len(embeddings))
+    train_embeds, test_embeds = embeddings[:train_size], embeddings[train_size:]
+    train_labels, test_labels = labels[:train_size], labels[train_size:]
+    
+    # Train probe
+    num_classes = len(set(labels))
+    probe = EmbeddingProbe(embeddings.size(-1), num_classes)
+    
+    optimizer = torch.optim.Adam(probe.parameters())
+    criterion = nn.CrossEntropyLoss()
+    
+    for epoch in range(100):
+        logits = probe(train_embeds)
+        loss = criterion(logits, train_labels)
+        
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
+    
+    # Test probe
+    with torch.no_grad():
+        test_logits = probe(test_embeds)
+        predictions = torch.argmax(test_logits, dim=-1)
+        accuracy = (predictions == test_labels).float().mean().item()
+    
+    return accuracy
+
+# Example probing tasks
+def run_probing_experiments():
+    """Run various probing tasks on embeddings"""
+    
+    # Part-of-speech tagging
+    pos_accuracy = probe_embeddings(word_embeddings, pos_labels, 'POS')
+    
+    # Named entity recognition  
+    ner_accuracy = probe_embeddings(word_embeddings, ner_labels, 'NER')
+    
+    # Syntactic chunking
+    chunk_accuracy = probe_embeddings(word_embeddings, chunk_labels, 'Chunking')
+    
+    print(f"POS tagging accuracy: {pos_accuracy:.3f}")
+    print(f"NER accuracy: {ner_accuracy:.3f}")
+    print(f"Chunking accuracy: {chunk_accuracy:.3f}")
+```
+
+Embeddings are fundamental to modern AI systems, providing the bridge between discrete, symbolic data and the continuous vector spaces that neural networks operate in. From simple word vectors to complex contextual representations, embeddings enable AI models to capture semantic relationships and perform sophisticated reasoning across diverse domains.
+
+Understanding how to create, evaluate, and apply embeddings is essential for working with modern AI systems, whether in natural language processing, computer vision, or specialized scientific applications like those developed at EderSpark.
+
+## Next steps
+
+<Card
+  title="Scaling laws"
+  icon="trending-up"
+  href="/llms/scaling-laws"
+  >
+  Discover how embedding quality and model performance scale with size and data.
+</Card>
+
+<Card
+  title="Model families"
+  icon="sitemap"
+  href="/llms/model-families"
+>
+  See how different model architectures use embeddings for various tasks.
+</Card>
+
+<Card
+  title="Scientific research applications"
+  icon="flask"
+  href="/applications/scientific-research"
+>
+  Explore how embeddings accelerate scientific discovery and knowledge extraction.
+</Card>

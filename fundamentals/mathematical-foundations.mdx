@@ -1,0 +1,776 @@
+---
+title: "Mathematical Foundations"
+description: "Essential mathematics for understanding artificial intelligence and machine learning"
+---
+
+## Introduction
+
+Understanding the mathematics behind AI is crucial for developing intuition about how algorithms work, why they succeed or fail, and how to improve them. This guide covers the essential mathematical concepts that underpin modern artificial intelligence systems.
+
+## Linear Algebra
+
+Linear algebra provides the mathematical framework for representing and manipulating data in AI systems.
+
+### Vectors and Vector Spaces
+
+#### Vector Basics
+A vector $\mathbf{v} \in \mathbb{R}^n$ is an ordered list of $n$ real numbers:
+
+$$\mathbf{v} = \begin{bmatrix} v_1 \\ v_2 \\ \vdots \\ v_n \end{bmatrix}$$
+
+```python
+import numpy as np
+
+# Create vectors
+v = np.array([1, 2, 3])
+w = np.array([4, 5, 6])
+
+# Vector operations
+addition = v + w        # Element-wise addition
+scalar_mult = 2 * v     # Scalar multiplication
+dot_product = np.dot(v, w)  # Dot product: v·w = Σ(v_i * w_i)
+
+print(f"v + w = {addition}")
+print(f"2v = {scalar_mult}")
+print(f"v·w = {dot_product}")
+```
+
+#### Vector Operations
+
+**Dot Product (Inner Product)**:
+$$\mathbf{v} \cdot \mathbf{w} = \sum_{i=1}^{n} v_i w_i = ||\mathbf{v}|| ||\mathbf{w}|| \cos(\theta)$$
+
+**Norm (Length)**:
+$$||\mathbf{v}||_2 = \sqrt{\sum_{i=1}^{n} v_i^2}$$
+
+**Distance**:
+$$d(\mathbf{v}, \mathbf{w}) = ||\mathbf{v} - \mathbf{w}||_2$$
+
+```python
+def vector_operations(v, w):
+    # Norms
+    l2_norm_v = np.linalg.norm(v, 2)
+    l1_norm_v = np.linalg.norm(v, 1)  # Manhattan norm
+    
+    # Distance
+    euclidean_distance = np.linalg.norm(v - w)
+    
+    # Angle between vectors
+    cos_angle = np.dot(v, w) / (np.linalg.norm(v) * np.linalg.norm(w))
+    angle = np.arccos(np.clip(cos_angle, -1, 1))
+    
+    return {
+        'l2_norm': l2_norm_v,
+        'l1_norm': l1_norm_v,
+        'distance': euclidean_distance,
+        'angle': angle
+    }
+```
+
+### Matrices and Matrix Operations
+
+#### Matrix Fundamentals
+A matrix $\mathbf{A} \in \mathbb{R}^{m \times n}$ is a rectangular array of numbers:
+
+$$\mathbf{A} = \begin{bmatrix}
+a_{11} & a_{12} & \cdots & a_{1n} \\
+a_{21} & a_{22} & \cdots & a_{2n} \\
+\vdots & \vdots & \ddots & \vdots \\
+a_{m1} & a_{m2} & \cdots & a_{mn}
+\end{bmatrix}$$
+
+```python
+# Matrix creation and operations
+A = np.array([[1, 2, 3], [4, 5, 6]])  # 2x3 matrix
+B = np.array([[7, 8], [9, 10], [11, 12]])  # 3x2 matrix
+
+# Matrix multiplication
+C = A @ B  # or np.matmul(A, B)
+print(f"A @ B = {C}")
+
+# Transpose
+A_T = A.T
+print(f"A^T = {A_T}")
+
+# Element-wise operations
+A_squared = A ** 2
+print(f"A^2 (element-wise) = {A_squared}")
+```
+
+#### Important Matrix Properties
+
+**Matrix Multiplication**:
+$$(\mathbf{A}\mathbf{B})_{ij} = \sum_{k=1}^{p} A_{ik} B_{kj}$$
+
+**Transpose**:
+$$(\mathbf{A}^T)_{ij} = A_{ji}$$
+
+**Inverse** (for square, non-singular matrices):
+$$\mathbf{A}\mathbf{A}^{-1} = \mathbf{A}^{-1}\mathbf{A} = \mathbf{I}$$
+
+```python
+def matrix_properties(A):
+    # For square matrices
+    if A.shape[0] == A.shape[1]:
+        # Determinant
+        det_A = np.linalg.det(A)
+        
+        # Inverse (if determinant != 0)
+        if abs(det_A) > 1e-10:
+            A_inv = np.linalg.inv(A)
+        else:
+            A_inv = None
+        
+        # Eigenvalues and eigenvectors
+        eigenvals, eigenvecs = np.linalg.eig(A)
+        
+        return {
+            'determinant': det_A,
+            'inverse': A_inv,
+            'eigenvalues': eigenvals,
+            'eigenvectors': eigenvecs
+        }
+    
+    return None
+```
+
+### Eigenvalues and Eigenvectors
+
+For square matrix $\mathbf{A}$, eigenvector $\mathbf{v}$ and eigenvalue $\lambda$ satisfy:
+
+$$\mathbf{A}\mathbf{v} = \lambda\mathbf{v}$$
+
+#### Applications in AI
+- **Principal Component Analysis (PCA)**: Find directions of maximum variance
+- **Spectral Clustering**: Use eigenvectors of graph Laplacian
+- **Neural Networks**: Understanding dynamics of gradient descent
+
+```python
+def pca_example(X):
+    """Principal Component Analysis implementation"""
+    # Center the data
+    X_centered = X - np.mean(X, axis=0)
+    
+    # Compute covariance matrix
+    cov_matrix = np.cov(X_centered.T)
+    
+    # Compute eigenvalues and eigenvectors
+    eigenvals, eigenvecs = np.linalg.eigh(cov_matrix)
+    
+    # Sort by eigenvalues (descending)
+    idx = np.argsort(eigenvals)[::-1]
+    eigenvals = eigenvals[idx]
+    eigenvecs = eigenvecs[:, idx]
+    
+    return eigenvals, eigenvecs
+
+# Example usage
+np.random.seed(42)
+data = np.random.randn(100, 3)  # 100 samples, 3 features
+eigenvalues, eigenvectors = pca_example(data)
+print(f"Eigenvalues: {eigenvalues}")
+```
+
+### Matrix Decompositions
+
+#### Singular Value Decomposition (SVD)
+For any matrix $\mathbf{A} \in \mathbb{R}^{m \times n}$:
+
+$$\mathbf{A} = \mathbf{U}\mathbf{\Sigma}\mathbf{V}^T$$
+
+Where:
+- $\mathbf{U} \in \mathbb{R}^{m \times m}$: Left singular vectors
+- $\mathbf{\Sigma} \in \mathbb{R}^{m \times n}$: Singular values (diagonal)
+- $\mathbf{V} \in \mathbb{R}^{n \times n}$: Right singular vectors
+
+```python
+def svd_example(A):
+    """SVD decomposition and applications"""
+    U, s, Vt = np.linalg.svd(A, full_matrices=False)
+    
+    # Reconstruct original matrix
+    A_reconstructed = U @ np.diag(s) @ Vt
+    
+    # Low-rank approximation (keep top k singular values)
+    k = 2
+    A_approx = U[:, :k] @ np.diag(s[:k]) @ Vt[:k, :]
+    
+    return {
+        'U': U,
+        'singular_values': s,
+        'Vt': Vt,
+        'reconstructed': A_reconstructed,
+        'low_rank_approx': A_approx
+    }
+
+# Example: Image compression using SVD
+A = np.random.randn(10, 8)
+result = svd_example(A)
+print(f"Original shape: {A.shape}")
+print(f"Reconstruction error: {np.linalg.norm(A - result['reconstructed'])}")
+```
+
+## Calculus and Optimization
+
+Calculus provides the tools for optimization, which is at the heart of machine learning.
+
+### Derivatives and Partial Derivatives
+
+#### Single Variable Calculus
+For function $f(x)$, the derivative represents the rate of change:
+
+$$f'(x) = \lim_{h \to 0} \frac{f(x+h) - f(x)}{h}$$
+
+#### Multivariable Calculus
+For function $f(x_1, x_2, \ldots, x_n)$, partial derivatives:
+
+$$\frac{\partial f}{\partial x_i} = \lim_{h \to 0} \frac{f(x_1, \ldots, x_i+h, \ldots, x_n) - f(x_1, \ldots, x_i, \ldots, x_n)}{h}$$
+
+```python
+import sympy as sp
+import matplotlib.pyplot as plt
+
+# Symbolic differentiation example
+x, y = sp.symbols('x y')
+f = x**2 + 2*x*y + y**2  # Function f(x,y) = x² + 2xy + y²
+
+# Partial derivatives
+df_dx = sp.diff(f, x)  # ∂f/∂x = 2x + 2y
+df_dy = sp.diff(f, y)  # ∂f/∂y = 2x + 2y
+
+print(f"∂f/∂x = {df_dx}")
+print(f"∂f/∂y = {df_dy}")
+
+# Gradient vector
+gradient = [df_dx, df_dy]
+print(f"∇f = {gradient}")
+```
+
+#### The Gradient
+The gradient $\nabla f$ points in the direction of steepest increase:
+
+$$\nabla f = \begin{bmatrix} \frac{\partial f}{\partial x_1} \\ \frac{\partial f}{\partial x_2} \\ \vdots \\ \frac{\partial f}{\partial x_n} \end{bmatrix}$$
+
+### Chain Rule
+
+Essential for backpropagation in neural networks:
+
+$$\frac{\partial f}{\partial x} = \frac{\partial f}{\partial u} \cdot \frac{\partial u}{\partial x}$$
+
+For composition $f(g(x))$:
+$$\frac{d}{dx} f(g(x)) = f'(g(x)) \cdot g'(x)$$
+
+```python
+def chain_rule_example():
+    """Demonstrate chain rule in practice"""
+    # Example: f(x) = sin(x²)
+    x = sp.Symbol('x')
+    
+    # Outer function: sin(u), Inner function: u = x²
+    outer = sp.sin
+    inner = x**2
+    
+    # Composite function
+    f = outer(inner)
+    
+    # Direct differentiation
+    df_dx_direct = sp.diff(f, x)
+    
+    # Chain rule: df/dx = df/du * du/dx
+    u = sp.Symbol('u')
+    df_du = sp.diff(sp.sin(u), u)  # cos(u)
+    du_dx = sp.diff(x**2, x)       # 2x
+    
+    df_dx_chain = df_du.subs(u, inner) * du_dx
+    
+    print(f"Direct: {df_dx_direct}")
+    print(f"Chain rule: {df_dx_chain}")
+    print(f"Equal: {sp.simplify(df_dx_direct - df_dx_chain) == 0}")
+```
+
+### Optimization Theory
+
+#### Gradient Descent
+Minimize function $f(\mathbf{x})$ by iteratively updating:
+
+$$\mathbf{x}_{t+1} = \mathbf{x}_t - \alpha \nabla f(\mathbf{x}_t)$$
+
+Where $\alpha$ is the learning rate.
+
+```python
+def gradient_descent(f, grad_f, x0, alpha=0.01, max_iters=1000, tol=1e-6):
+    """Basic gradient descent implementation"""
+    x = x0.copy()
+    history = [x.copy()]
+    
+    for i in range(max_iters):
+        grad = grad_f(x)
+        x_new = x - alpha * grad
+        
+        history.append(x_new.copy())
+        
+        # Check convergence
+        if np.linalg.norm(x_new - x) < tol:
+            break
+            
+        x = x_new
+    
+    return x, history
+
+# Example: minimize f(x,y) = x² + y²
+def f(x): return x[0]**2 + x[1]**2
+def grad_f(x): return np.array([2*x[0], 2*x[1]])
+
+x0 = np.array([3.0, 4.0])
+x_opt, history = gradient_descent(f, grad_f, x0)
+print(f"Optimum found: {x_opt}")
+print(f"Function value: {f(x_opt)}")
+```
+
+#### Second-Order Methods
+Use Hessian matrix for better convergence:
+
+$$\mathbf{H} = \begin{bmatrix}
+\frac{\partial^2 f}{\partial x_1^2} & \frac{\partial^2 f}{\partial x_1 \partial x_2} & \cdots \\
+\frac{\partial^2 f}{\partial x_2 \partial x_1} & \frac{\partial^2 f}{\partial x_2^2} & \cdots \\
+\vdots & \vdots & \ddots
+\end{bmatrix}$$
+
+**Newton's Method**:
+$$\mathbf{x}_{t+1} = \mathbf{x}_t - \mathbf{H}^{-1} \nabla f(\mathbf{x}_t)$$
+
+### Constrained Optimization
+
+#### Lagrange Multipliers
+Optimize $f(\mathbf{x})$ subject to constraint $g(\mathbf{x}) = 0$:
+
+$$\mathcal{L}(\mathbf{x}, \lambda) = f(\mathbf{x}) - \lambda g(\mathbf{x})$$
+
+At optimum: $\nabla f(\mathbf{x}) = \lambda \nabla g(\mathbf{x})$
+
+```python
+def lagrange_example():
+    """Optimize f(x,y) = x² + y² subject to x + y = 1"""
+    x, y, lam = sp.symbols('x y lambda')
+    
+    # Objective function
+    f = x**2 + y**2
+    
+    # Constraint
+    g = x + y - 1
+    
+    # Lagrangian
+    L = f - lam * g
+    
+    # Find critical points
+    grad_L = [sp.diff(L, var) for var in [x, y, lam]]
+    
+    # Solve system of equations
+    solution = sp.solve(grad_L, [x, y, lam])
+    
+    print(f"Optimal point: x = {solution[x]}, y = {solution[y]}")
+    print(f"Lagrange multiplier: λ = {solution[lam]}")
+    print(f"Minimum value: {f.subs(solution)}")
+```
+
+## Probability and Statistics
+
+Probability theory provides the foundation for handling uncertainty in AI systems.
+
+### Probability Distributions
+
+#### Discrete Distributions
+
+**Bernoulli Distribution**:
+$$P(X = 1) = p, \quad P(X = 0) = 1 - p$$
+
+**Binomial Distribution**:
+$$P(X = k) = \binom{n}{k} p^k (1-p)^{n-k}$$
+
+```python
+import scipy.stats as stats
+
+# Bernoulli distribution
+p = 0.3
+bernoulli_dist = stats.bernoulli(p)
+print(f"P(X=1) = {bernoulli_dist.pmf(1)}")
+
+# Binomial distribution
+n, p = 10, 0.3
+binomial_dist = stats.binom(n, p)
+print(f"P(X=3) = {binomial_dist.pmf(3)}")
+
+# Generate samples
+samples = binomial_dist.rvs(size=1000)
+print(f"Sample mean: {np.mean(samples)}, Expected: {n*p}")
+```
+
+#### Continuous Distributions
+
+**Normal (Gaussian) Distribution**:
+$$f(x) = \frac{1}{\sqrt{2\pi\sigma^2}} e^{-\frac{(x-\mu)^2}{2\sigma^2}}$$
+
+**Multivariate Normal**:
+$$f(\mathbf{x}) = \frac{1}{(2\pi)^{k/2}|\mathbf{\Sigma}|^{1/2}} e^{-\frac{1}{2}(\mathbf{x}-\boldsymbol{\mu})^T\mathbf{\Sigma}^{-1}(\mathbf{x}-\boldsymbol{\mu})}$$
+
+```python
+# Univariate normal
+mu, sigma = 0, 1
+normal_dist = stats.norm(mu, sigma)
+
+# Probability density
+x = np.linspace(-3, 3, 100)
+pdf_values = normal_dist.pdf(x)
+
+# Multivariate normal
+mean = np.array([0, 0])
+cov = np.array([[1, 0.5], [0.5, 1]])
+mvn_dist = stats.multivariate_normal(mean, cov)
+
+# Sample from distribution
+samples = mvn_dist.rvs(size=1000)
+```
+
+### Bayes' Theorem
+
+Fundamental for probabilistic inference:
+
+$$P(A|B) = \frac{P(B|A)P(A)}{P(B)}$$
+
+#### Maximum A Posteriori (MAP) Estimation
+$$\hat{\theta}_{MAP} = \arg\max_\theta P(\theta|D) = \arg\max_\theta P(D|\theta)P(\theta)$$
+
+```python
+def bayes_theorem_example():
+    """Medical diagnosis example"""
+    # Prior probability of having disease
+    P_disease = 0.01
+    
+    # Probability of positive test given disease
+    P_pos_given_disease = 0.9
+    
+    # Probability of positive test given no disease
+    P_pos_given_no_disease = 0.05
+    
+    # Total probability of positive test (law of total probability)
+    P_pos = P_pos_given_disease * P_disease + P_pos_given_no_disease * (1 - P_disease)
+    
+    # Probability of disease given positive test (Bayes' theorem)
+    P_disease_given_pos = (P_pos_given_disease * P_disease) / P_pos
+    
+    print(f"P(Disease|Positive Test) = {P_disease_given_pos:.3f}")
+    
+    return P_disease_given_pos
+```
+
+### Information Theory
+
+#### Entropy
+Measures uncertainty in random variable:
+
+$$H(X) = -\sum_{i} P(x_i) \log P(x_i)$$
+
+#### Kullback-Leibler Divergence
+Measures difference between distributions:
+
+$$D_{KL}(P||Q) = \sum_{i} P(x_i) \log \frac{P(x_i)}{Q(x_i)}$$
+
+```python
+def information_theory_measures(p, q=None):
+    """Calculate entropy and KL divergence"""
+    p = np.array(p)
+    p = p / np.sum(p)  # Normalize
+    
+    # Entropy
+    entropy = -np.sum(p * np.log2(p + 1e-10))  # Add small constant to avoid log(0)
+    
+    if q is not None:
+        q = np.array(q)
+        q = q / np.sum(q)  # Normalize
+        
+        # KL divergence
+        kl_div = np.sum(p * np.log2((p + 1e-10) / (q + 1e-10)))
+        
+        return entropy, kl_div
+    
+    return entropy
+
+# Example
+p = [0.5, 0.3, 0.2]  # Distribution P
+q = [0.4, 0.4, 0.2]  # Distribution Q
+
+entropy_p, kl_pq = information_theory_measures(p, q)
+print(f"Entropy of P: {entropy_p:.3f} bits")
+print(f"KL(P||Q): {kl_pq:.3f} bits")
+```
+
+## Applications in Machine Learning
+
+### Loss Functions and Their Derivatives
+
+#### Mean Squared Error (Regression)
+$$L_{MSE} = \frac{1}{n} \sum_{i=1}^{n} (y_i - \hat{y}_i)^2$$
+
+$$\frac{\partial L_{MSE}}{\partial \hat{y}_i} = \frac{2}{n}(\hat{y}_i - y_i)$$
+
+#### Cross-Entropy Loss (Classification)
+$$L_{CE} = -\frac{1}{n} \sum_{i=1}^{n} \sum_{j=1}^{k} y_{ij} \log(\hat{y}_{ij})$$
+
+```python
+def loss_functions_and_gradients():
+    """Implement common loss functions and their gradients"""
+    
+    def mse_loss(y_true, y_pred):
+        loss = np.mean((y_true - y_pred)**2)
+        gradient = 2 * (y_pred - y_true) / len(y_true)
+        return loss, gradient
+    
+    def cross_entropy_loss(y_true, y_pred):
+        # Avoid log(0) by adding small constant
+        y_pred_clipped = np.clip(y_pred, 1e-10, 1 - 1e-10)
+        
+        loss = -np.mean(np.sum(y_true * np.log(y_pred_clipped), axis=1))
+        gradient = -(y_true / y_pred_clipped) / len(y_true)
+        
+        return loss, gradient
+    
+    # Example usage
+    y_true = np.array([1, 2, 3])
+    y_pred = np.array([1.1, 1.9, 3.2])
+    
+    mse_l, mse_g = mse_loss(y_true, y_pred)
+    print(f"MSE Loss: {mse_l:.4f}")
+    print(f"MSE Gradient: {mse_g}")
+```
+
+### Regularization
+
+#### L1 and L2 Regularization
+**L1 (Lasso)**: $\lambda \sum_{i} |w_i|$
+**L2 (Ridge)**: $\lambda \sum_{i} w_i^2$
+
+#### Combined Loss Function
+$$L_{total} = L_{data} + \lambda_{L1} ||w||_1 + \lambda_{L2} ||w||_2^2$$
+
+```python
+def regularization_example(X, y, lambda_l1=0.01, lambda_l2=0.01):
+    """Linear regression with L1 and L2 regularization"""
+    n_features = X.shape[1]
+    w = np.random.randn(n_features)
+    
+    def compute_loss_and_grad(w):
+        # Predictions
+        y_pred = X @ w
+        
+        # Data loss (MSE)
+        data_loss = np.mean((y - y_pred)**2)
+        data_grad = 2 * X.T @ (y_pred - y) / len(y)
+        
+        # L1 regularization
+        l1_loss = lambda_l1 * np.sum(np.abs(w))
+        l1_grad = lambda_l1 * np.sign(w)
+        
+        # L2 regularization
+        l2_loss = lambda_l2 * np.sum(w**2)
+        l2_grad = 2 * lambda_l2 * w
+        
+        # Total loss and gradient
+        total_loss = data_loss + l1_loss + l2_loss
+        total_grad = data_grad + l1_grad + l2_grad
+        
+        return total_loss, total_grad
+    
+    return compute_loss_and_grad
+```
+
+### Matrix Calculus in Deep Learning
+
+#### Vectorization
+Convert scalar derivatives to vector/matrix form for efficiency.
+
+**Example: Linear layer**
+$$\mathbf{y} = \mathbf{W}\mathbf{x} + \mathbf{b}$$
+
+Gradients:
+$$\frac{\partial L}{\partial \mathbf{W}} = \frac{\partial L}{\partial \mathbf{y}} \mathbf{x}^T$$
+$$\frac{\partial L}{\partial \mathbf{x}} = \mathbf{W}^T \frac{\partial L}{\partial \mathbf{y}}$$
+$$\frac{\partial L}{\partial \mathbf{b}} = \frac{\partial L}{\partial \mathbf{y}}$$
+
+```python
+class LinearLayer:
+    def __init__(self, input_dim, output_dim):
+        self.W = np.random.randn(output_dim, input_dim) * 0.1
+        self.b = np.zeros((output_dim, 1))
+        
+    def forward(self, x):
+        self.x = x  # Store for backward pass
+        return self.W @ x + self.b
+    
+    def backward(self, grad_output):
+        # Gradients with respect to parameters
+        grad_W = grad_output @ self.x.T
+        grad_b = grad_output
+        
+        # Gradient with respect to input
+        grad_x = self.W.T @ grad_output
+        
+        # Update parameters (simple gradient descent)
+        learning_rate = 0.01
+        self.W -= learning_rate * grad_W
+        self.b -= learning_rate * grad_b
+        
+        return grad_x
+```
+
+## Numerical Methods and Stability
+
+### Numerical Precision
+Floating-point arithmetic limitations can cause:
+- **Overflow**: Numbers too large to represent
+- **Underflow**: Numbers too small (become zero)
+- **Catastrophic Cancellation**: Loss of precision in subtraction
+
+```python
+def numerical_stability_examples():
+    """Demonstrate numerical stability issues and solutions"""
+    
+    # Example 1: Softmax numerical stability
+    def unstable_softmax(x):
+        exp_x = np.exp(x)
+        return exp_x / np.sum(exp_x)
+    
+    def stable_softmax(x):
+        # Subtract max to prevent overflow
+        x_shifted = x - np.max(x)
+        exp_x = np.exp(x_shifted)
+        return exp_x / np.sum(exp_x)
+    
+    # Large input values
+    x = np.array([1000, 1001, 1002])
+    
+    try:
+        result_unstable = unstable_softmax(x)
+        print(f"Unstable softmax: {result_unstable}")
+    except:
+        print("Unstable softmax failed due to overflow")
+    
+    result_stable = stable_softmax(x)
+    print(f"Stable softmax: {result_stable}")
+    
+    # Example 2: Log-sum-exp trick
+    def log_sum_exp(x):
+        max_x = np.max(x)
+        return max_x + np.log(np.sum(np.exp(x - max_x)))
+    
+    log_result = log_sum_exp(x)
+    print(f"Log-sum-exp: {log_result}")
+```
+
+### Condition Numbers
+Measure sensitivity of solution to input perturbations:
+
+$$\kappa(\mathbf{A}) = ||\mathbf{A}|| \cdot ||\mathbf{A}^{-1}||$$
+
+```python
+def condition_number_analysis(A):
+    """Analyze matrix condition number"""
+    cond_num = np.linalg.cond(A)
+    
+    if cond_num > 1e12:
+        status = "Ill-conditioned (numerical issues likely)"
+    elif cond_num > 1e6:
+        status = "Moderately conditioned"
+    else:
+        status = "Well-conditioned"
+    
+    return cond_num, status
+
+# Example
+A = np.array([[1, 2], [1.001, 2]])  # Nearly singular matrix
+cond, status = condition_number_analysis(A)
+print(f"Condition number: {cond:.2e} - {status}")
+```
+
+## Computational Complexity
+
+### Big O Notation
+Describes how algorithm runtime scales with input size:
+
+- **Matrix multiplication**: $O(n^3)$
+- **Matrix-vector multiplication**: $O(n^2)$
+- **Gradient computation**: $O(n)$
+- **Eigenvalue decomposition**: $O(n^3)$
+
+### Memory Complexity
+Important for large-scale ML:
+
+```python
+def memory_analysis():
+    """Analyze memory requirements for common operations"""
+    
+    def matrix_memory(m, n, dtype=np.float32):
+        """Memory required for m×n matrix"""
+        bytes_per_element = np.dtype(dtype).itemsize
+        total_bytes = m * n * bytes_per_element
+        return total_bytes
+    
+    # Example: Large neural network layer
+    input_size = 10000
+    output_size = 1000
+    batch_size = 32
+    
+    # Weight matrix memory
+    weight_memory = matrix_memory(output_size, input_size)
+    
+    # Activation memory (for batch)
+    activation_memory = matrix_memory(batch_size, output_size)
+    
+    print(f"Weight matrix: {weight_memory / 1e6:.1f} MB")
+    print(f"Activations (batch): {activation_memory / 1e6:.1f} MB")
+```
+
+## Advanced Topics
+
+### Convex Optimization
+Functions where local minima are global minima:
+
+$$f(\lambda x + (1-\lambda)y) \leq \lambda f(x) + (1-\lambda)f(y)$$
+
+### Non-convex Optimization
+Most deep learning problems are non-convex:
+- Multiple local minima
+- Saddle points
+- Requires careful initialization and optimization strategies
+
+### Automatic Differentiation
+Efficiently compute gradients:
+- **Forward mode**: Good for functions with few inputs
+- **Reverse mode** (backpropagation): Good for functions with few outputs
+
+The mathematical foundations covered here provide the essential tools for understanding and developing AI systems. Mastery of these concepts enables deeper insight into why algorithms work, how to debug them, and how to develop new approaches.
+
+## Next Steps
+
+<Card
+  title="Neural Networks"
+  icon="brain"
+  href="/fundamentals/neural-networks"
+>
+  Apply these mathematical concepts to neural network architectures.
+</Card>
+
+<Card
+  title="Deep Learning"
+  icon="layers"
+  href="/fundamentals/deep-learning"
+>
+  See how these foundations enable complex pattern recognition.
+</Card>
+
+<Card
+  title="Optimization in Practice"
+  icon="trending-up"
+  href="/training/optimization-algorithms"
+>
+  Learn about practical optimization techniques for training AI models.
+</Card>

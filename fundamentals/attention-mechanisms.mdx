@@ -1,0 +1,915 @@
+---
+title: "Attention mechanisms"
+description: "Understanding how neural networks learn to focus on relevant information"
+---
+
+## Introduction to attention
+
+Attention mechanisms allow neural networks to dynamically focus on different parts of the input when making predictions. Inspired by human cognitive attention, these mechanisms have become fundamental to modern AI systems, enabling models to handle complex relationships across long sequences and diverse data types.
+
+## The attention concept
+
+### Human attention analogy
+When reading a sentence, humans don't process every word equally. We focus more on key words and phrases that carry the most meaning. Similarly, attention mechanisms allow neural networks to identify and focus on the most relevant parts of their input.
+
+### Core principles
+1. **Selective focus**: Highlight important information
+2. **Dynamic weighting**: Attention weights change based on context
+3. **Global connectivity**: Any input position can influence any output
+4. **Differentiable**: Can be trained end-to-end with backpropagation
+
+## Basic attention mechanism
+
+### The alignment model
+The foundational idea behind attention is learning an alignment function that measures how well inputs at different positions match a given output position.
+
+```python
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+import math
+
+class BasicAttention(nn.Module):
+    def __init__(self, hidden_dim):
+        super().__init__()
+        self.hidden_dim = hidden_dim
+        
+    def forward(self, query, keys, values):
+        # query: [batch_size, hidden_dim]
+        # keys: [batch_size, seq_len, hidden_dim] 
+        # values: [batch_size, seq_len, hidden_dim]
+        
+        # Compute attention scores
+        scores = torch.matmul(query.unsqueeze(1), keys.transpose(-2, -1))
+        scores = scores.squeeze(1)  # [batch_size, seq_len]
+        
+        # Apply softmax to get attention weights
+        attention_weights = F.softmax(scores, dim=-1)
+        
+        # Compute weighted sum of values
+        context = torch.matmul(attention_weights.unsqueeze(1), values)
+        context = context.squeeze(1)  # [batch_size, hidden_dim]
+        
+        return context, attention_weights
+```
+
+### Attention equation
+The general attention mechanism can be expressed as:
+
+$$\text{Attention}(Q, K, V) = \text{softmax}(f(Q, K))V$$
+
+Where:
+- $Q$ = Query (what we're looking for)
+- $K$ = Keys (what we have available)
+- $V$ = Values (the actual information we want)
+- $f(Q, K)$ = Scoring function (measures compatibility)
+
+## Attention scoring functions
+
+### Dot product attention
+The simplest scoring function uses dot product similarity:
+
+$$f(q, k) = q^T k$$
+
+```python
+def dot_product_attention(query, key, value):
+    """Basic dot product attention"""
+    # Compute attention scores
+    scores = torch.matmul(query, key.transpose(-2, -1))
+    
+    # Apply softmax
+    attention_weights = F.softmax(scores, dim=-1)
+    
+    # Apply attention to values
+    output = torch.matmul(attention_weights, value)
+    
+    return output, attention_weights
+```
+
+### Scaled dot product attention
+Scale by square root of dimension to prevent softmax saturation:
+
+$$f(q, k) = \frac{q^T k}{\sqrt{d_k}}$$
+
+```python
+def scaled_dot_product_attention(query, key, value, mask=None):
+    """Scaled dot product attention (used in transformers)"""
+    d_k = query.size(-1)
+    
+    # Compute scaled attention scores
+    scores = torch.matmul(query, key.transpose(-2, -1)) / math.sqrt(d_k)
+    
+    # Apply mask if provided
+    if mask is not None:
+        scores = scores.masked_fill(mask == 0, -1e9)
+    
+    # Apply softmax
+    attention_weights = F.softmax(scores, dim=-1)
+    
+    # Apply attention to values
+    output = torch.matmul(attention_weights, value)
+    
+    return output, attention_weights
+```
+
+### Additive attention (Bahdanau attention)
+Uses a learned alignment model:
+
+$$f(q, k) = v^T \tanh(W_q q + W_k k)$$
+
+```python
+class AdditiveAttention(nn.Module):
+    def __init__(self, query_dim, key_dim, attention_dim):
+        super().__init__()
+        self.query_projection = nn.Linear(query_dim, attention_dim, bias=False)
+        self.key_projection = nn.Linear(key_dim, attention_dim, bias=False)
+        self.v = nn.Linear(attention_dim, 1, bias=False)
+        
+    def forward(self, query, key, value):
+        # query: [batch_size, query_dim]
+        # key: [batch_size, seq_len, key_dim]
+        # value: [batch_size, seq_len, value_dim]
+        
+        batch_size, seq_len = key.size(0), key.size(1)
+        
+        # Project query and key
+        query_proj = self.query_projection(query).unsqueeze(1)  # [batch, 1, attn_dim]
+        key_proj = self.key_projection(key)  # [batch, seq_len, attn_dim]
+        
+        # Compute alignment scores
+        alignment = torch.tanh(query_proj + key_proj)  # [batch, seq_len, attn_dim]
+        scores = self.v(alignment).squeeze(-1)  # [batch, seq_len]
+        
+        # Apply softmax
+        attention_weights = F.softmax(scores, dim=-1)
+        
+        # Compute context vector
+        context = torch.matmul(attention_weights.unsqueeze(1), value)
+        context = context.squeeze(1)  # [batch, value_dim]
+        
+        return context, attention_weights
+```
+
+### General attention (Luong attention)
+Three variants of general attention:
+
+```python
+class GeneralAttention(nn.Module):
+    def __init__(self, hidden_dim, attention_type='general'):
+        super().__init__()
+        self.attention_type = attention_type
+        
+        if attention_type == 'general':
+            self.W = nn.Linear(hidden_dim, hidden_dim, bias=False)
+        elif attention_type == 'concat':
+            self.W = nn.Linear(hidden_dim * 2, hidden_dim)
+            self.v = nn.Linear(hidden_dim, 1, bias=False)
+    
+    def forward(self, query, key, value):
+        if self.attention_type == 'dot':
+            scores = torch.matmul(query.unsqueeze(1), key.transpose(-2, -1))
+            scores = scores.squeeze(1)
+            
+        elif self.attention_type == 'general':
+            transformed_key = self.W(key)
+            scores = torch.matmul(query.unsqueeze(1), transformed_key.transpose(-2, -1))
+            scores = scores.squeeze(1)
+            
+        elif self.attention_type == 'concat':
+            batch_size, seq_len, hidden_dim = key.shape
+            query_expanded = query.unsqueeze(1).expand(-1, seq_len, -1)
+            
+            concat_input = torch.cat([query_expanded, key], dim=-1)
+            scores = self.v(torch.tanh(self.W(concat_input))).squeeze(-1)
+        
+        attention_weights = F.softmax(scores, dim=-1)
+        context = torch.matmul(attention_weights.unsqueeze(1), value).squeeze(1)
+        
+        return context, attention_weights
+```
+
+## Self-attention
+
+### Concept
+Self-attention allows a sequence to attend to itself, discovering internal relationships and dependencies.
+
+```python
+class SelfAttention(nn.Module):
+    def __init__(self, d_model):
+        super().__init__()
+        self.d_model = d_model
+        self.query_linear = nn.Linear(d_model, d_model)
+        self.key_linear = nn.Linear(d_model, d_model)
+        self.value_linear = nn.Linear(d_model, d_model)
+        
+    def forward(self, x):
+        # x: [batch_size, seq_len, d_model]
+        
+        # Generate Q, K, V from the same input
+        Q = self.query_linear(x)
+        K = self.key_linear(x) 
+        V = self.value_linear(x)
+        
+        # Apply scaled dot product attention
+        output, attention_weights = scaled_dot_product_attention(Q, K, V)
+        
+        return output, attention_weights
+```
+
+### Practical example: sentence analysis
+
+```python
+def demonstrate_self_attention():
+    """Show how self-attention captures word relationships"""
+    # Simple example with word embeddings
+    vocab = ["the", "cat", "sat", "on", "mat", "big", "red"]
+    sentence = ["the", "big", "cat", "sat", "on", "the", "red", "mat"]
+    
+    # Create simple embeddings (in practice, use pre-trained embeddings)
+    d_model = 64
+    embeddings = {word: torch.randn(d_model) for word in vocab}
+    
+    # Convert sentence to embeddings
+    sentence_embeddings = torch.stack([embeddings[word] for word in sentence])
+    sentence_embeddings = sentence_embeddings.unsqueeze(0)  # Add batch dimension
+    
+    # Apply self-attention
+    self_attn = SelfAttention(d_model)
+    output, attention_weights = self_attn(sentence_embeddings)
+    
+    # Visualize attention patterns
+    print("Sentence:", " ".join(sentence))
+    print("Attention weights shape:", attention_weights.shape)
+    
+    # Show which words attend to each other
+    attn_matrix = attention_weights[0].detach().numpy()  # Remove batch dim
+    
+    print(f"\nAttention from 'cat' (position 2):")
+    for i, word in enumerate(sentence):
+        print(f"  to '{word}': {attn_matrix[2, i]:.3f}")
+    
+    return attention_weights
+
+# demonstrate_self_attention()
+```
+
+## Multi-head attention
+
+### Motivation
+Different attention heads can capture different types of relationships:
+- Syntactic relationships (subject-verb, modifier-noun)
+- Semantic relationships (synonyms, antonyms)
+- Positional relationships (adjacent words, sentence boundaries)
+
+### Implementation
+
+```python
+class MultiHeadAttention(nn.Module):
+    def __init__(self, d_model, num_heads, dropout=0.1):
+        super().__init__()
+        assert d_model % num_heads == 0
+        
+        self.d_model = d_model
+        self.num_heads = num_heads
+        self.d_k = d_model // num_heads
+        
+        # Linear layers for Q, K, V projections
+        self.w_q = nn.Linear(d_model, d_model)
+        self.w_k = nn.Linear(d_model, d_model) 
+        self.w_v = nn.Linear(d_model, d_model)
+        self.w_o = nn.Linear(d_model, d_model)
+        
+        self.dropout = nn.Dropout(dropout)
+        
+    def forward(self, query, key, value, mask=None):
+        batch_size, seq_len, d_model = query.shape
+        
+        # 1. Linear projections and reshape for multi-head
+        Q = self.w_q(query).view(batch_size, seq_len, self.num_heads, self.d_k).transpose(1, 2)
+        K = self.w_k(key).view(batch_size, seq_len, self.num_heads, self.d_k).transpose(1, 2)
+        V = self.w_v(value).view(batch_size, seq_len, self.num_heads, self.d_k).transpose(1, 2)
+        
+        # 2. Apply attention to each head
+        attention_output, attention_weights = self.attention(Q, K, V, mask)
+        
+        # 3. Concatenate heads
+        attention_output = attention_output.transpose(1, 2).contiguous().view(
+            batch_size, seq_len, d_model
+        )
+        
+        # 4. Final linear projection
+        output = self.w_o(attention_output)
+        
+        return output, attention_weights
+    
+    def attention(self, query, key, value, mask=None):
+        d_k = query.size(-1)
+        
+        # Compute attention scores
+        scores = torch.matmul(query, key.transpose(-2, -1)) / math.sqrt(d_k)
+        
+        if mask is not None:
+            scores = scores.masked_fill(mask == 0, -1e9)
+        
+        attention_weights = F.softmax(scores, dim=-1)
+        attention_weights = self.dropout(attention_weights)
+        
+        output = torch.matmul(attention_weights, value)
+        
+        return output, attention_weights
+```
+
+### Analyzing different attention heads
+
+```python
+def analyze_attention_heads(model, input_text, tokenizer):
+    """Analyze what different attention heads learn"""
+    
+    # Get attention weights from all layers and heads
+    with torch.no_grad():
+        outputs = model(input_text, output_attentions=True)
+        attention_weights = outputs.attentions
+    
+    # Analyze patterns in each head
+    head_patterns = {}
+    
+    for layer_idx, layer_attention in enumerate(attention_weights):
+        layer_patterns = {}
+        
+        for head_idx in range(layer_attention.shape[1]):
+            head_attn = layer_attention[0, head_idx].numpy()  # [seq_len, seq_len]
+            
+            # Compute pattern metrics
+            patterns = {
+                'diagonal_focus': compute_diagonal_attention(head_attn),
+                'broadcast_pattern': compute_broadcast_attention(head_attn),
+                'local_focus': compute_local_attention(head_attn),
+                'syntactic_score': compute_syntactic_attention(head_attn, input_text)
+            }
+            
+            layer_patterns[f'head_{head_idx}'] = patterns
+        
+        head_patterns[f'layer_{layer_idx}'] = layer_patterns
+    
+    return head_patterns
+
+def compute_diagonal_attention(attention_matrix):
+    """Measure attention to adjacent positions"""
+    diag_sum = sum(attention_matrix[i, i+1] for i in range(len(attention_matrix)-1))
+    return diag_sum / (len(attention_matrix) - 1)
+
+def compute_broadcast_attention(attention_matrix):
+    """Measure if one position receives most attention"""
+    col_max = attention_matrix.max(axis=0)
+    return col_max.max()
+
+def compute_local_attention(attention_matrix, window=3):
+    """Measure attention within local windows"""
+    local_sum = 0
+    count = 0
+    
+    for i in range(len(attention_matrix)):
+        start = max(0, i - window)
+        end = min(len(attention_matrix), i + window + 1)
+        local_sum += attention_matrix[i, start:end].sum()
+        count += 1
+    
+    return local_sum / count
+```
+
+## Attention variants
+
+### Cross-attention
+Attention between different sequences (e.g., encoder-decoder):
+
+```python
+class CrossAttention(nn.Module):
+    def __init__(self, d_model, num_heads):
+        super().__init__()
+        self.multihead_attn = MultiHeadAttention(d_model, num_heads)
+    
+    def forward(self, query_seq, key_value_seq, mask=None):
+        # query_seq: decoder sequence
+        # key_value_seq: encoder sequence
+        
+        return self.multihead_attn(query_seq, key_value_seq, key_value_seq, mask)
+```
+
+### Sparse attention
+Attention to only a subset of positions for efficiency:
+
+```python
+class SparseAttention(nn.Module):
+    def __init__(self, d_model, num_heads, attention_type='local'):
+        super().__init__()
+        self.d_model = d_model
+        self.num_heads = num_heads
+        self.attention_type = attention_type
+        self.multihead_attn = MultiHeadAttention(d_model, num_heads)
+    
+    def create_sparse_mask(self, seq_len, attention_type='local', window_size=128):
+        """Create sparse attention mask"""
+        mask = torch.zeros(seq_len, seq_len)
+        
+        if attention_type == 'local':
+            # Local window attention
+            for i in range(seq_len):
+                start = max(0, i - window_size // 2)
+                end = min(seq_len, i + window_size // 2 + 1)
+                mask[i, start:end] = 1
+                
+        elif attention_type == 'strided':
+            # Strided attention pattern
+            stride = 64
+            for i in range(seq_len):
+                # Local attention
+                start = max(0, i - window_size // 2)
+                end = min(seq_len, i + window_size // 2 + 1)
+                mask[i, start:end] = 1
+                
+                # Strided attention
+                for j in range(0, seq_len, stride):
+                    if j < seq_len:
+                        mask[i, j] = 1
+                        
+        elif attention_type == 'random':
+            # Random sparse pattern
+            num_random = min(window_size, seq_len)
+            for i in range(seq_len):
+                random_indices = torch.randperm(seq_len)[:num_random]
+                mask[i, random_indices] = 1
+        
+        return mask
+    
+    def forward(self, x):
+        seq_len = x.size(1)
+        sparse_mask = self.create_sparse_mask(seq_len, self.attention_type)
+        
+        return self.multihead_attn(x, x, x, sparse_mask)
+```
+
+### Linear attention
+Reduce quadratic complexity to linear:
+
+```python
+class LinearAttention(nn.Module):
+    def __init__(self, d_model):
+        super().__init__()
+        self.d_model = d_model
+        self.w_q = nn.Linear(d_model, d_model)
+        self.w_k = nn.Linear(d_model, d_model)
+        self.w_v = nn.Linear(d_model, d_model)
+    
+    def forward(self, x):
+        Q = self.w_q(x)
+        K = self.w_k(x)
+        V = self.w_v(x)
+        
+        # Apply feature map (e.g., ELU + 1)
+        Q = F.elu(Q) + 1
+        K = F.elu(K) + 1
+        
+        # Linear attention computation
+        # Instead of QK^T V, compute Q(K^T V)
+        KV = torch.matmul(K.transpose(-2, -1), V)  # [batch, d_model, d_model]
+        output = torch.matmul(Q, KV)  # [batch, seq_len, d_model]
+        
+        # Normalize
+        normalizer = torch.matmul(Q, K.sum(dim=1, keepdim=True).transpose(-2, -1))
+        output = output / (normalizer + 1e-6)
+        
+        return output
+```
+
+## Advanced attention patterns
+
+### Relative position attention
+Encode relative distances instead of absolute positions:
+
+```python
+class RelativePositionAttention(nn.Module):
+    def __init__(self, d_model, num_heads, max_relative_position=128):
+        super().__init__()
+        self.d_model = d_model
+        self.num_heads = num_heads
+        self.max_relative_position = max_relative_position
+        
+        # Relative position embeddings
+        self.relative_positions_embeddings = nn.Embedding(
+            2 * max_relative_position - 1, d_model
+        )
+        
+        self.multihead_attn = MultiHeadAttention(d_model, num_heads)
+    
+    def get_relative_positions(self, seq_len):
+        """Generate relative position matrix"""
+        positions = torch.arange(seq_len).unsqueeze(1)
+        relative_positions = positions - positions.transpose(0, 1)
+        
+        # Clip to maximum relative position
+        relative_positions = torch.clamp(
+            relative_positions, 
+            -self.max_relative_position + 1, 
+            self.max_relative_position - 1
+        )
+        
+        # Shift to make all values positive
+        relative_positions += self.max_relative_position - 1
+        
+        return relative_positions
+    
+    def forward(self, x):
+        seq_len = x.size(1)
+        
+        # Get relative position embeddings
+        rel_positions = self.get_relative_positions(seq_len)
+        rel_embeddings = self.relative_positions_embeddings(rel_positions)
+        
+        # Apply attention with relative position bias
+        return self.multihead_attn(x, x, x)  # Simplified - full implementation more complex
+```
+
+### Axial attention
+For 2D data (images), apply attention along each axis:
+
+```python
+class AxialAttention(nn.Module):
+    def __init__(self, d_model, num_heads):
+        super().__init__()
+        self.row_attention = MultiHeadAttention(d_model, num_heads)
+        self.col_attention = MultiHeadAttention(d_model, num_heads)
+    
+    def forward(self, x):
+        # x: [batch, height, width, d_model]
+        batch_size, height, width, d_model = x.shape
+        
+        # Row attention
+        x_row = x.view(batch_size * height, width, d_model)
+        x_row, _ = self.row_attention(x_row, x_row, x_row)
+        x_row = x_row.view(batch_size, height, width, d_model)
+        
+        # Column attention  
+        x_col = x_row.transpose(1, 2).contiguous().view(batch_size * width, height, d_model)
+        x_col, _ = self.col_attention(x_col, x_col, x_col)
+        x_col = x_col.view(batch_size, width, height, d_model).transpose(1, 2)
+        
+        return x_col
+```
+
+## Attention applications
+
+### Machine translation with attention
+
+```python
+class AttentionSeq2Seq(nn.Module):
+    def __init__(self, src_vocab_size, tgt_vocab_size, hidden_dim, num_layers=1):
+        super().__init__()
+        
+        # Encoder
+        self.encoder_embedding = nn.Embedding(src_vocab_size, hidden_dim)
+        self.encoder = nn.LSTM(hidden_dim, hidden_dim, num_layers, batch_first=True)
+        
+        # Decoder with attention
+        self.decoder_embedding = nn.Embedding(tgt_vocab_size, hidden_dim)
+        self.decoder = nn.LSTM(hidden_dim * 2, hidden_dim, num_layers, batch_first=True)  # *2 for context
+        
+        # Attention mechanism
+        self.attention = AdditiveAttention(hidden_dim, hidden_dim, hidden_dim)
+        
+        # Output projection
+        self.output_projection = nn.Linear(hidden_dim, tgt_vocab_size)
+        
+    def forward(self, src_seq, tgt_seq):
+        # Encode source sequence
+        src_embedded = self.encoder_embedding(src_seq)
+        encoder_outputs, (hidden, cell) = self.encoder(src_embedded)
+        
+        # Decode with attention
+        decoder_hidden = hidden
+        decoder_cell = cell
+        decoder_outputs = []
+        
+        for t in range(tgt_seq.size(1)):
+            # Get target token embedding
+            if t == 0:
+                decoder_input = torch.zeros_like(tgt_seq[:, 0])  # Start token
+            else:
+                decoder_input = tgt_seq[:, t-1]
+            
+            tgt_embedded = self.decoder_embedding(decoder_input).unsqueeze(1)
+            
+            # Compute attention context
+            query = decoder_hidden[-1]  # Last layer hidden state
+            context, attention_weights = self.attention(query, encoder_outputs, encoder_outputs)
+            
+            # Combine target embedding with context
+            decoder_input_combined = torch.cat([tgt_embedded.squeeze(1), context], dim=-1)
+            decoder_input_combined = decoder_input_combined.unsqueeze(1)
+            
+            # Decoder step
+            decoder_output, (decoder_hidden, decoder_cell) = self.decoder(
+                decoder_input_combined, (decoder_hidden, decoder_cell)
+            )
+            
+            # Project to vocabulary
+            output = self.output_projection(decoder_output.squeeze(1))
+            decoder_outputs.append(output)
+        
+        return torch.stack(decoder_outputs, dim=1)
+```
+
+### Document classification with attention
+
+```python
+class AttentionDocumentClassifier(nn.Module):
+    def __init__(self, vocab_size, embed_dim, hidden_dim, num_classes, num_heads=8):
+        super().__init__()
+        
+        self.embedding = nn.Embedding(vocab_size, embed_dim)
+        self.positional_encoding = PositionalEncoding(embed_dim)
+        
+        # Multi-head self-attention
+        self.self_attention = MultiHeadAttention(embed_dim, num_heads)
+        
+        # Document-level attention (attend to most important words)
+        self.doc_attention = nn.Linear(embed_dim, 1)
+        
+        # Classification head
+        self.classifier = nn.Sequential(
+            nn.Linear(embed_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Dropout(0.1),
+            nn.Linear(hidden_dim, num_classes)
+        )
+    
+    def forward(self, input_ids):
+        # Word embeddings
+        x = self.embedding(input_ids)
+        x = self.positional_encoding(x)
+        
+        # Self-attention to capture word relationships
+        x, _ = self.self_attention(x, x, x)
+        
+        # Document-level attention to focus on important words
+        attention_weights = F.softmax(self.doc_attention(x), dim=1)
+        
+        # Weighted sum to get document representation
+        doc_repr = torch.sum(attention_weights * x, dim=1)
+        
+        # Classification
+        logits = self.classifier(doc_repr)
+        
+        return logits, attention_weights
+```
+
+### Visual attention for image captioning
+
+```python
+class VisualAttention(nn.Module):
+    def __init__(self, feature_dim, hidden_dim):
+        super().__init__()
+        self.feature_dim = feature_dim
+        self.hidden_dim = hidden_dim
+        
+        # Attention mechanism
+        self.attention = AdditiveAttention(hidden_dim, feature_dim, hidden_dim)
+        
+        # LSTM decoder
+        self.lstm = nn.LSTM(feature_dim + hidden_dim, hidden_dim, batch_first=True)
+        
+        # Output vocabulary projection
+        self.vocab_projection = nn.Linear(hidden_dim, vocab_size)
+        
+    def forward(self, image_features, captions):
+        # image_features: [batch, num_regions, feature_dim]  
+        # captions: [batch, max_len]
+        
+        batch_size, num_regions, feature_dim = image_features.shape
+        max_len = captions.size(1)
+        
+        # Initialize LSTM hidden state
+        hidden = torch.zeros(1, batch_size, self.hidden_dim)
+        cell = torch.zeros(1, batch_size, self.hidden_dim)
+        
+        outputs = []
+        attention_maps = []
+        
+        for t in range(max_len):
+            # Use previous hidden state as query for attention
+            query = hidden[-1]  # [batch, hidden_dim]
+            
+            # Attend to image regions
+            context, attention_weights = self.attention(query, image_features, image_features)
+            
+            # Get word embedding (simplified)
+            if t == 0:
+                word_embed = torch.zeros(batch_size, self.hidden_dim)  # Start token
+            else:
+                word_embed = self.word_embedding(captions[:, t-1])
+            
+            # Combine word embedding with visual context
+            lstm_input = torch.cat([word_embed, context], dim=-1).unsqueeze(1)
+            
+            # LSTM step
+            output, (hidden, cell) = self.lstm(lstm_input, (hidden, cell))
+            
+            # Project to vocabulary
+            vocab_logits = self.vocab_projection(output.squeeze(1))
+            
+            outputs.append(vocab_logits)
+            attention_maps.append(attention_weights)
+        
+        return torch.stack(outputs, dim=1), torch.stack(attention_maps, dim=1)
+```
+
+## Attention for scientific applications
+
+### Protein structure prediction with attention
+
+```python
+class ProteinAttention(nn.Module):
+    def __init__(self, aa_vocab_size, d_model, num_heads):
+        super().__init__()
+        
+        # Amino acid embedding
+        self.aa_embedding = nn.Embedding(aa_vocab_size, d_model)
+        
+        # Self-attention for amino acid interactions
+        self.self_attention = MultiHeadAttention(d_model, num_heads)
+        
+        # Contact prediction head
+        self.contact_head = nn.Linear(d_model * 2, 1)
+        
+        # Structure prediction
+        self.structure_head = nn.Linear(d_model, 3)  # x, y, z coordinates
+        
+    def forward(self, amino_acid_sequence):
+        # Embed amino acids
+        x = self.aa_embedding(amino_acid_sequence)
+        
+        # Self-attention to capture long-range interactions
+        x, attention_weights = self.self_attention(x, x, x)
+        
+        # Predict pairwise contacts using attention
+        seq_len = x.size(1)
+        contact_predictions = []
+        
+        for i in range(seq_len):
+            for j in range(i+1, seq_len):
+                pair_repr = torch.cat([x[:, i], x[:, j]], dim=-1)
+                contact_prob = torch.sigmoid(self.contact_head(pair_repr))
+                contact_predictions.append(contact_prob)
+        
+        # Predict 3D coordinates
+        coordinates = self.structure_head(x)
+        
+        return coordinates, contact_predictions, attention_weights
+```
+
+### Scientific paper analysis with hierarchical attention
+
+```python
+class ScientificPaperAnalyzer(nn.Module):
+    def __init__(self, vocab_size, d_model, num_heads, num_classes):
+        super().__init__()
+        
+        self.word_embedding = nn.Embedding(vocab_size, d_model)
+        
+        # Word-level attention within sentences
+        self.word_attention = MultiHeadAttention(d_model, num_heads)
+        
+        # Sentence-level attention within sections
+        self.sentence_attention = MultiHeadAttention(d_model, num_heads)
+        
+        # Section-level attention for paper classification
+        self.section_attention = nn.Linear(d_model, 1)
+        
+        # Classification heads
+        self.topic_classifier = nn.Linear(d_model, num_classes)
+        self.novelty_classifier = nn.Linear(d_model, 1)  # Novelty score
+        
+    def forward(self, paper_sections):
+        # paper_sections: [batch, num_sections, max_sentences, max_words]
+        batch_size, num_sections, max_sentences, max_words = paper_sections.shape
+        
+        # Process words within sentences
+        word_representations = []
+        for section_idx in range(num_sections):
+            section_sentences = []
+            
+            for sent_idx in range(max_sentences):
+                sentence = paper_sections[:, section_idx, sent_idx, :]
+                
+                # Word embeddings
+                word_embeds = self.word_embedding(sentence)
+                
+                # Word-level attention
+                attended_words, _ = self.word_attention(word_embeds, word_embeds, word_embeds)
+                
+                # Sentence representation (mean pooling)
+                sentence_repr = attended_words.mean(dim=1)
+                section_sentences.append(sentence_repr)
+            
+            # Stack sentences in section
+            section_sentences = torch.stack(section_sentences, dim=1)
+            
+            # Sentence-level attention within section
+            attended_sentences, _ = self.sentence_attention(
+                section_sentences, section_sentences, section_sentences
+            )
+            
+            # Section representation (mean pooling)
+            section_repr = attended_sentences.mean(dim=1)
+            word_representations.append(section_repr)
+        
+        # Stack sections
+        section_representations = torch.stack(word_representations, dim=1)
+        
+        # Section-level attention for paper classification
+        section_weights = F.softmax(self.section_attention(section_representations), dim=1)
+        paper_repr = torch.sum(section_weights * section_representations, dim=1)
+        
+        # Classification
+        topic_logits = self.topic_classifier(paper_repr)
+        novelty_score = torch.sigmoid(self.novelty_classifier(paper_repr))
+        
+        return topic_logits, novelty_score, section_weights
+```
+
+## Attention efficiency and optimization
+
+### Memory-efficient attention computation
+
+```python
+def flash_attention_concept(query, key, value, block_size=64):
+    """
+    Conceptual implementation of Flash Attention
+    Real implementation requires CUDA kernels for efficiency
+    """
+    batch_size, seq_len, d_k = query.shape
+    
+    # Initialize output
+    output = torch.zeros_like(query)
+    
+    # Process in blocks to reduce memory usage
+    for i in range(0, seq_len, block_size):
+        end_i = min(i + block_size, seq_len)
+        q_block = query[:, i:end_i]
+        
+        for j in range(0, seq_len, block_size):
+            end_j = min(j + block_size, seq_len)
+            k_block = key[:, j:end_j]
+            v_block = value[:, j:end_j]
+            
+            # Compute attention for this block
+            scores = torch.matmul(q_block, k_block.transpose(-2, -1)) / math.sqrt(d_k)
+            attn_weights = F.softmax(scores, dim=-1)
+            
+            # Update output
+            output[:, i:end_i] += torch.matmul(attn_weights, v_block)
+    
+    return output
+```
+
+### Gradient checkpointing for long sequences
+
+```python
+class CheckpointedAttention(nn.Module):
+    def __init__(self, d_model, num_heads):
+        super().__init__()
+        self.attention = MultiHeadAttention(d_model, num_heads)
+    
+    def forward(self, x):
+        # Use gradient checkpointing to save memory
+        return torch.utils.checkpoint.checkpoint(self.attention, x, x, x)
+```
+
+Attention mechanisms have become fundamental to modern AI, enabling models to dynamically focus on relevant information and capture complex relationships in data. From the basic dot-product attention to sophisticated multi-head and sparse variants, these mechanisms provide the flexibility and expressiveness needed for advanced AI applications in language, vision, and scientific domains.
+
+Understanding attention is crucial for working with transformer-based models and designing new architectures for specific applications. The ability to visualize and interpret attention patterns also provides valuable insights into how models make decisions.
+
+## Next steps
+
+<Card
+  title="Embeddings and representations"
+  icon="vector-square"
+  href="/fundamentals/embeddings"
+>
+  Learn how neural networks create meaningful representations of data.
+</Card>
+
+<Card
+  title="Transformer architecture"
+  icon="shuffle"
+  href="/llms/transformer-architecture"
+>
+  See how attention mechanisms are integrated into the transformer architecture.
+</Card>
+
+<Card
+  title="Scientific applications"
+  icon="flask"
+  href="/applications/scientific-research"
+>
+  Explore how attention mechanisms accelerate scientific discovery.
+</Card>

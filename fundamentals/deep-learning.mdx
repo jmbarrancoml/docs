@@ -1,0 +1,701 @@
+---
+title: "Deep Learning"
+description: "Advanced neural network architectures and training techniques for complex pattern recognition"
+---
+
+## Introduction to Deep Learning
+
+Deep learning is a subset of machine learning that uses artificial neural networks with multiple layers (hence "deep") to model and understand complex patterns in data. Unlike traditional machine learning approaches that rely on hand-crafted features, deep learning automatically learns hierarchical representations from raw data.
+
+## What Makes Networks "Deep"?
+
+### Depth vs. Width
+- **Shallow Networks**: 1-2 hidden layers, wide layers with many neurons
+- **Deep Networks**: Many hidden layers (3+), can be narrower per layer
+- **Modern Networks**: Can have hundreds or thousands of layers
+
+### Hierarchical Feature Learning
+Deep networks learn representations at multiple levels of abstraction:
+
+```
+Input (Raw pixels) → 
+Layer 1 (Edges, corners) → 
+Layer 2 (Shapes, textures) → 
+Layer 3 (Object parts) → 
+Layer 4 (Objects) → 
+Output (Classifications)
+```
+
+### Universal Approximation
+While shallow networks can theoretically approximate any function, deep networks:
+- Require exponentially fewer parameters for many functions
+- Learn more efficient representations
+- Generalize better to new data
+
+## Key Architectural Components
+
+### Convolutional Layers
+Designed for spatial data (images, sequences):
+
+```python
+import torch
+import torch.nn as nn
+
+class ConvLayer(nn.Module):
+    def __init__(self, in_channels, out_channels, kernel_size, stride=1, padding=0):
+        super().__init__()
+        self.conv = nn.Conv2d(in_channels, out_channels, kernel_size, stride, padding)
+        self.batch_norm = nn.BatchNorm2d(out_channels)
+        self.relu = nn.ReLU(inplace=True)
+    
+    def forward(self, x):
+        x = self.conv(x)
+        x = self.batch_norm(x)
+        x = self.relu(x)
+        return x
+
+# Example: Processing 32x32 RGB image
+conv_layer = ConvLayer(in_channels=3, out_channels=64, kernel_size=3, padding=1)
+input_tensor = torch.randn(1, 3, 32, 32)  # Batch size 1, 3 channels, 32x32
+output = conv_layer(input_tensor)  # Shape: [1, 64, 32, 32]
+```
+
+#### Convolution Operation
+The convolution operation computes:
+
+$$y[i,j] = \sum_{m}\sum_{n} x[i+m, j+n] \cdot w[m,n] + b$$
+
+Key properties:
+- **Translation Invariance**: Features detected regardless of position
+- **Parameter Sharing**: Same filter applied across spatial dimensions
+- **Sparse Connectivity**: Each output depends on local input region
+
+### Pooling Layers
+Reduce spatial dimensions and computational load:
+
+```python
+class PoolingExample(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.max_pool = nn.MaxPool2d(kernel_size=2, stride=2)
+        self.avg_pool = nn.AvgPool2d(kernel_size=2, stride=2)
+        self.adaptive_pool = nn.AdaptiveAvgPool2d((1, 1))  # Global pooling
+    
+    def forward(self, x):
+        # Max pooling: Take maximum in each 2x2 region
+        max_out = self.max_pool(x)
+        
+        # Average pooling: Take average in each 2x2 region
+        avg_out = self.avg_pool(x)
+        
+        # Global average pooling: Reduce to 1x1 per channel
+        global_out = self.adaptive_pool(x)
+        
+        return max_out, avg_out, global_out
+```
+
+### Normalization Layers
+Stabilize training and improve convergence:
+
+#### Batch Normalization
+Normalizes inputs across the batch dimension:
+
+$$\hat{x} = \frac{x - \mu_B}{\sqrt{\sigma_B^2 + \epsilon}}$$
+$$y = \gamma \hat{x} + \beta$$
+
+Where $\mu_B$ and $\sigma_B$ are batch mean and variance.
+
+```python
+class BatchNormExample(nn.Module):
+    def __init__(self, num_features):
+        super().__init__()
+        self.batch_norm = nn.BatchNorm2d(num_features)
+        # Learnable parameters gamma and beta
+        
+    def forward(self, x):
+        # Input shape: [batch_size, channels, height, width]
+        return self.batch_norm(x)
+```
+
+#### Layer Normalization
+Normalizes across feature dimensions:
+
+```python
+class LayerNormExample(nn.Module):
+    def __init__(self, normalized_shape):
+        super().__init__()
+        self.layer_norm = nn.LayerNorm(normalized_shape)
+        
+    def forward(self, x):
+        # Normalizes across the last dimension(s)
+        return self.layer_norm(x)
+```
+
+## Advanced Architectures
+
+### Residual Networks (ResNet)
+Address the vanishing gradient problem with skip connections:
+
+```python
+class ResidualBlock(nn.Module):
+    def __init__(self, in_channels, out_channels, stride=1):
+        super().__init__()
+        self.conv1 = nn.Conv2d(in_channels, out_channels, 3, stride, 1)
+        self.bn1 = nn.BatchNorm2d(out_channels)
+        self.conv2 = nn.Conv2d(out_channels, out_channels, 3, 1, 1)
+        self.bn2 = nn.BatchNorm2d(out_channels)
+        self.relu = nn.ReLU(inplace=True)
+        
+        # Skip connection handling
+        self.skip = nn.Sequential()
+        if stride != 1 or in_channels != out_channels:
+            self.skip = nn.Sequential(
+                nn.Conv2d(in_channels, out_channels, 1, stride),
+                nn.BatchNorm2d(out_channels)
+            )
+    
+    def forward(self, x):
+        residual = x
+        
+        out = self.relu(self.bn1(self.conv1(x)))
+        out = self.bn2(self.conv2(out))
+        
+        # Add skip connection
+        out += self.skip(residual)
+        out = self.relu(out)
+        
+        return out
+
+class ResNet(nn.Module):
+    def __init__(self, block, layers, num_classes=1000):
+        super().__init__()
+        self.in_channels = 64
+        
+        # Initial layers
+        self.conv1 = nn.Conv2d(3, 64, 7, stride=2, padding=3)
+        self.bn1 = nn.BatchNorm2d(64)
+        self.relu = nn.ReLU(inplace=True)
+        self.maxpool = nn.MaxPool2d(3, stride=2, padding=1)
+        
+        # Residual layers
+        self.layer1 = self._make_layer(block, 64, layers[0])
+        self.layer2 = self._make_layer(block, 128, layers[1], stride=2)
+        self.layer3 = self._make_layer(block, 256, layers[2], stride=2)
+        self.layer4 = self._make_layer(block, 512, layers[3], stride=2)
+        
+        # Classification head
+        self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
+        self.fc = nn.Linear(512, num_classes)
+    
+    def _make_layer(self, block, out_channels, blocks, stride=1):
+        layers = []
+        layers.append(block(self.in_channels, out_channels, stride))
+        self.in_channels = out_channels
+        
+        for _ in range(1, blocks):
+            layers.append(block(out_channels, out_channels))
+        
+        return nn.Sequential(*layers)
+    
+    def forward(self, x):
+        x = self.relu(self.bn1(self.conv1(x)))
+        x = self.maxpool(x)
+        
+        x = self.layer1(x)
+        x = self.layer2(x)
+        x = self.layer3(x)
+        x = self.layer4(x)
+        
+        x = self.avgpool(x)
+        x = torch.flatten(x, 1)
+        x = self.fc(x)
+        
+        return x
+
+# Create ResNet-18
+def resnet18(num_classes=1000):
+    return ResNet(ResidualBlock, [2, 2, 2, 2], num_classes)
+```
+
+### Dense Networks (DenseNet)
+Each layer connects to all subsequent layers:
+
+```python
+class DenseBlock(nn.Module):
+    def __init__(self, in_channels, growth_rate, num_layers):
+        super().__init__()
+        self.layers = nn.ModuleList()
+        
+        for i in range(num_layers):
+            layer_in_channels = in_channels + i * growth_rate
+            self.layers.append(self._make_layer(layer_in_channels, growth_rate))
+    
+    def _make_layer(self, in_channels, out_channels):
+        return nn.Sequential(
+            nn.BatchNorm2d(in_channels),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(in_channels, out_channels, 3, padding=1)
+        )
+    
+    def forward(self, x):
+        features = [x]
+        
+        for layer in self.layers:
+            # Concatenate all previous feature maps
+            layer_input = torch.cat(features, dim=1)
+            new_features = layer(layer_input)
+            features.append(new_features)
+        
+        return torch.cat(features, dim=1)
+```
+
+## Training Deep Networks
+
+### Gradient Flow Challenges
+
+#### Vanishing Gradients
+In deep networks, gradients can become exponentially small:
+
+$$\frac{\partial L}{\partial w_1} = \frac{\partial L}{\partial y} \prod_{l=2}^{L} \frac{\partial a_l}{\partial a_{l-1}}$$
+
+If partial derivatives are small (< 1), their product vanishes.
+
+#### Exploding Gradients
+Conversely, large gradients can grow exponentially:
+
+```python
+def gradient_clipping(parameters, max_norm):
+    """Clip gradients to prevent explosion"""
+    total_norm = 0
+    for p in parameters:
+        if p.grad is not None:
+            param_norm = p.grad.data.norm(2)
+            total_norm += param_norm.item() ** 2
+    total_norm = total_norm ** (1. / 2)
+    
+    clip_coef = max_norm / (total_norm + 1e-6)
+    if clip_coef < 1:
+        for p in parameters:
+            if p.grad is not None:
+                p.grad.data.mul_(clip_coef)
+```
+
+### Optimization Techniques
+
+#### Adaptive Learning Rate Methods
+
+**Adam Optimizer**:
+```python
+class AdamOptimizer:
+    def __init__(self, params, lr=0.001, betas=(0.9, 0.999), eps=1e-8):
+        self.params = params
+        self.lr = lr
+        self.beta1, self.beta2 = betas
+        self.eps = eps
+        self.m = {}  # First moment
+        self.v = {}  # Second moment
+        self.t = 0   # Time step
+        
+    def step(self):
+        self.t += 1
+        
+        for param in self.params:
+            if param.grad is None:
+                continue
+                
+            grad = param.grad.data
+            param_id = id(param)
+            
+            # Initialize moments if needed
+            if param_id not in self.m:
+                self.m[param_id] = torch.zeros_like(param.data)
+                self.v[param_id] = torch.zeros_like(param.data)
+            
+            # Update biased first and second moments
+            self.m[param_id] = self.beta1 * self.m[param_id] + (1 - self.beta1) * grad
+            self.v[param_id] = self.beta2 * self.v[param_id] + (1 - self.beta2) * grad**2
+            
+            # Bias correction
+            m_hat = self.m[param_id] / (1 - self.beta1**self.t)
+            v_hat = self.v[param_id] / (1 - self.beta2**self.t)
+            
+            # Update parameters
+            param.data -= self.lr * m_hat / (torch.sqrt(v_hat) + self.eps)
+```
+
+#### Learning Rate Scheduling
+
+```python
+class LearningRateScheduler:
+    def __init__(self, optimizer, schedule_type='cosine', **kwargs):
+        self.optimizer = optimizer
+        self.schedule_type = schedule_type
+        self.initial_lr = optimizer.param_groups[0]['lr']
+        self.step_count = 0
+        self.kwargs = kwargs
+    
+    def step(self):
+        self.step_count += 1
+        
+        if self.schedule_type == 'cosine':
+            lr = self.cosine_schedule()
+        elif self.schedule_type == 'exponential':
+            lr = self.exponential_schedule()
+        elif self.schedule_type == 'step':
+            lr = self.step_schedule()
+        
+        for param_group in self.optimizer.param_groups:
+            param_group['lr'] = lr
+    
+    def cosine_schedule(self):
+        T_max = self.kwargs.get('T_max', 100)
+        eta_min = self.kwargs.get('eta_min', 0)
+        
+        return eta_min + (self.initial_lr - eta_min) * (
+            1 + math.cos(math.pi * self.step_count / T_max)
+        ) / 2
+    
+    def exponential_schedule(self):
+        gamma = self.kwargs.get('gamma', 0.95)
+        return self.initial_lr * (gamma ** self.step_count)
+    
+    def step_schedule(self):
+        step_size = self.kwargs.get('step_size', 30)
+        gamma = self.kwargs.get('gamma', 0.1)
+        
+        return self.initial_lr * (gamma ** (self.step_count // step_size))
+```
+
+### Regularization Techniques
+
+#### Dropout
+Randomly zero out neurons during training:
+
+```python
+class Dropout(nn.Module):
+    def __init__(self, p=0.5):
+        super().__init__()
+        self.p = p
+    
+    def forward(self, x):
+        if self.training:
+            # Create binary mask
+            mask = torch.rand_like(x) > self.p
+            
+            # Scale by 1/(1-p) to maintain expected value
+            x = x * mask.float() / (1 - self.p)
+        
+        return x
+```
+
+#### Weight Decay (L2 Regularization)
+Add penalty term to loss function:
+
+$$L_{total} = L_{original} + \lambda \sum_{i} w_i^2$$
+
+```python
+# Built into PyTorch optimizers
+optimizer = torch.optim.Adam(model.parameters(), lr=0.001, weight_decay=1e-4)
+```
+
+#### Data Augmentation
+Artificially expand training dataset:
+
+```python
+import torchvision.transforms as transforms
+
+data_transforms = transforms.Compose([
+    transforms.RandomHorizontalFlip(p=0.5),
+    transforms.RandomRotation(degrees=10),
+    transforms.ColorJitter(brightness=0.2, contrast=0.2),
+    transforms.RandomResizedCrop(224, scale=(0.8, 1.0)),
+    transforms.Normalize(mean=[0.485, 0.456, 0.406], 
+                        std=[0.229, 0.224, 0.225])
+])
+```
+
+## Training Loop and Best Practices
+
+### Complete Training Example
+
+```python
+def train_model(model, train_loader, val_loader, num_epochs, device):
+    criterion = nn.CrossEntropyLoss()
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.001, weight_decay=1e-4)
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=num_epochs)
+    
+    best_val_acc = 0.0
+    train_losses = []
+    val_accuracies = []
+    
+    for epoch in range(num_epochs):
+        # Training phase
+        model.train()
+        running_loss = 0.0
+        
+        for batch_idx, (data, targets) in enumerate(train_loader):
+            data, targets = data.to(device), targets.to(device)
+            
+            # Forward pass
+            outputs = model(data)
+            loss = criterion(outputs, targets)
+            
+            # Backward pass and optimization
+            optimizer.zero_grad()
+            loss.backward()
+            
+            # Gradient clipping (optional)
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+            
+            optimizer.step()
+            
+            running_loss += loss.item()
+            
+            # Log progress
+            if batch_idx % 100 == 0:
+                print(f'Epoch {epoch}, Batch {batch_idx}, Loss: {loss.item():.4f}')
+        
+        # Validation phase
+        model.eval()
+        val_correct = 0
+        val_total = 0
+        
+        with torch.no_grad():
+            for data, targets in val_loader:
+                data, targets = data.to(device), targets.to(device)
+                outputs = model(data)
+                _, predicted = torch.max(outputs.data, 1)
+                
+                val_total += targets.size(0)
+                val_correct += (predicted == targets).sum().item()
+        
+        val_accuracy = val_correct / val_total
+        avg_train_loss = running_loss / len(train_loader)
+        
+        train_losses.append(avg_train_loss)
+        val_accuracies.append(val_accuracy)
+        
+        print(f'Epoch {epoch}: Train Loss: {avg_train_loss:.4f}, Val Acc: {val_accuracy:.4f}')
+        
+        # Save best model
+        if val_accuracy > best_val_acc:
+            best_val_acc = val_accuracy
+            torch.save(model.state_dict(), 'best_model.pth')
+        
+        # Learning rate scheduling
+        scheduler.step()
+    
+    return train_losses, val_accuracies
+```
+
+### Transfer Learning
+Leverage pre-trained models for new tasks:
+
+```python
+def create_transfer_learning_model(num_classes, pretrained=True):
+    # Load pre-trained ResNet
+    model = torchvision.models.resnet50(pretrained=pretrained)
+    
+    # Freeze early layers (optional)
+    for param in model.parameters():
+        param.requires_grad = False
+    
+    # Replace final layer for new task
+    num_features = model.fc.in_features
+    model.fc = nn.Linear(num_features, num_classes)
+    
+    # Unfreeze final layer
+    for param in model.fc.parameters():
+        param.requires_grad = True
+    
+    return model
+
+# Fine-tuning strategy
+def fine_tune_model(model, train_loader, val_loader):
+    # Phase 1: Train only final layer
+    for param in model.parameters():
+        param.requires_grad = False
+    for param in model.fc.parameters():
+        param.requires_grad = True
+    
+    optimizer = torch.optim.Adam(model.fc.parameters(), lr=0.001)
+    # Train for a few epochs...
+    
+    # Phase 2: Fine-tune entire network with lower learning rate
+    for param in model.parameters():
+        param.requires_grad = True
+    
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.0001)
+    # Continue training...
+```
+
+## Modern Deep Learning Trends
+
+### Attention Mechanisms
+Allow models to focus on relevant parts of input:
+
+```python
+class SelfAttention(nn.Module):
+    def __init__(self, embed_dim, num_heads):
+        super().__init__()
+        self.embed_dim = embed_dim
+        self.num_heads = num_heads
+        self.head_dim = embed_dim // num_heads
+        
+        self.qkv = nn.Linear(embed_dim, embed_dim * 3)
+        self.out_proj = nn.Linear(embed_dim, embed_dim)
+        
+    def forward(self, x):
+        B, N, C = x.shape
+        
+        # Generate Q, K, V
+        qkv = self.qkv(x).reshape(B, N, 3, self.num_heads, self.head_dim)
+        qkv = qkv.permute(2, 0, 3, 1, 4)
+        q, k, v = qkv[0], qkv[1], qkv[2]
+        
+        # Compute attention
+        attn = (q @ k.transpose(-2, -1)) / math.sqrt(self.head_dim)
+        attn = torch.softmax(attn, dim=-1)
+        
+        # Apply attention to values
+        x = (attn @ v).transpose(1, 2).reshape(B, N, C)
+        x = self.out_proj(x)
+        
+        return x
+```
+
+### Normalization Advances
+Newer normalization techniques:
+
+```python
+class GroupNorm(nn.Module):
+    def __init__(self, num_groups, num_channels, eps=1e-5):
+        super().__init__()
+        self.num_groups = num_groups
+        self.eps = eps
+        self.weight = nn.Parameter(torch.ones(num_channels))
+        self.bias = nn.Parameter(torch.zeros(num_channels))
+        
+    def forward(self, x):
+        B, C, H, W = x.shape
+        
+        # Reshape for group normalization
+        x = x.view(B, self.num_groups, C // self.num_groups, H, W)
+        
+        # Compute statistics
+        mean = x.mean(dim=(2, 3, 4), keepdim=True)
+        var = x.var(dim=(2, 3, 4), keepdim=True)
+        
+        # Normalize
+        x = (x - mean) / torch.sqrt(var + self.eps)
+        
+        # Reshape back and apply scale and shift
+        x = x.view(B, C, H, W)
+        x = x * self.weight.view(1, -1, 1, 1) + self.bias.view(1, -1, 1, 1)
+        
+        return x
+```
+
+## Applications Across Domains
+
+### Computer Vision
+- **Image Classification**: ResNet, EfficientNet, Vision Transformers
+- **Object Detection**: YOLO, R-CNN family, DETR
+- **Segmentation**: U-Net, Mask R-CNN, DeepLab
+- **Generation**: GANs, Diffusion Models, VAEs
+
+### Natural Language Processing
+- **Language Models**: GPT, BERT, T5, PaLM
+- **Translation**: Transformer, mBERT
+- **Question Answering**: BERT variants, T5
+- **Text Generation**: GPT family, PaLM
+
+### Scientific Applications (EderSpark Focus)
+- **Protein Folding**: AlphaFold2, ESMFold
+- **Drug Discovery**: Molecular property prediction
+- **Astronomy**: Galaxy classification, exoplanet detection
+- **Literature Analysis**: Semantic search, knowledge extraction
+
+### Speech and Audio
+- **Speech Recognition**: Deep Speech, Wav2Vec
+- **Speech Synthesis**: WaveNet, Tacotron
+- **Music Generation**: MuseNet, AIVA
+
+## Challenges and Future Directions
+
+### Current Limitations
+- **Data Efficiency**: Require large datasets
+- **Interpretability**: Black box nature
+- **Computational Cost**: High resource requirements
+- **Generalization**: Can overfit or be brittle
+
+### Emerging Solutions
+- **Few-shot Learning**: Learn from minimal examples
+- **Meta-learning**: Learn to learn efficiently
+- **Neural Architecture Search**: Automated design
+- **Continual Learning**: Learn without forgetting
+
+### Hardware Considerations
+- **GPU Optimization**: CUDA, tensor cores
+- **TPU Design**: Google's tensor processing units
+- **Edge Deployment**: Mobile and embedded systems
+- **Specialized Chips**: Neuromorphic computing
+
+## Getting Started with Deep Learning
+
+### Essential Libraries
+```python
+# PyTorch ecosystem
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+import torchvision
+import torchvision.transforms as transforms
+
+# TensorFlow/Keras
+import tensorflow as tf
+from tensorflow import keras
+
+# Scientific computing
+import numpy as np
+import matplotlib.pyplot as plt
+
+# Utilities
+from tqdm import tqdm
+import wandb  # For experiment tracking
+```
+
+### Development Workflow
+1. **Data Preparation**: Clean, augment, and split dataset
+2. **Model Design**: Choose architecture and hyperparameters
+3. **Training**: Implement training loop with proper logging
+4. **Evaluation**: Comprehensive testing and validation
+5. **Deployment**: Optimize for production environment
+
+Deep learning has transformed artificial intelligence by enabling automatic feature learning from raw data. Its hierarchical approach mirrors how humans process information, making it particularly effective for complex tasks like vision, language, and scientific discovery.
+
+## Next Steps
+
+<Card
+  title="Mathematical Foundations"
+  icon="calculator"
+  href="/fundamentals/mathematical-foundations"
+>
+  Dive deeper into the mathematics underlying deep learning.
+</Card>
+
+<Card
+  title="Transformers"
+  icon="shuffle"
+  href="/fundamentals/transformers"
+>
+  Explore the architecture revolutionizing AI.
+</Card>
+
+<Card
+  title="Scientific Applications"
+  icon="flask"
+  href="/applications/scientific-research"
+>
+  See how deep learning accelerates scientific discovery.
+</Card>

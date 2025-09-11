@@ -1,0 +1,1707 @@
+---
+title: Drug discovery and molecular design
+description: AI-driven approaches to accelerating pharmaceutical research, from molecular property prediction to clinical trial optimization and personalized medicine
+---
+
+# Drug discovery and molecular design
+
+Traditional drug discovery is a notoriously expensive and time-consuming process, often requiring 10-15 years and billions of dollars to bring a single drug to market. The pharmaceutical industry faces a productivity crisis: despite massive investments in R&D, the number of new drug approvals has remained relatively stagnant. AI and machine learning are revolutionizing this landscape by accelerating every stage of the drug discovery pipeline, from initial target identification to clinical trial design.
+
+## The drug discovery challenge
+
+The complexity of drug discovery stems from multiple interconnected challenges:
+
+**Biological complexity**
+- Human biology involves intricate networks of proteins, genes, and metabolic pathways
+- Drug-target interactions occur in complex, dynamic cellular environments
+- Off-target effects can cause unexpected side effects
+- Individual genetic variations affect drug efficacy and safety
+
+**Chemical space exploration**
+- Drug-like chemical space contains an estimated 10^60 molecules
+- Traditional screening can only test a tiny fraction of possibilities
+- Synthesizability constraints limit which molecules can be made
+- Property optimization requires balancing multiple competing objectives
+
+**Clinical translation challenges**
+- High attrition rates in clinical trials (>90% failure rate)
+- Animal models often don't translate to human efficacy
+- Patient stratification and biomarker identification
+- Regulatory compliance and safety requirements
+
+AI approaches address these challenges by providing predictive models, automating design processes, and enabling personalized medicine approaches.
+
+## AI in target identification and validation
+
+### Protein structure prediction and analysis
+
+Understanding protein structure is crucial for drug design. AI has revolutionized structure prediction:
+
+```python
+import torch
+import torch.nn as nn
+import numpy as np
+from sklearn.ensemble import RandomForestRegressor
+import matplotlib.pyplot as plt
+from rdkit import Chem
+from rdkit.Chem import Descriptors, AllChem
+import pandas as pd
+
+class ProteinStructureAnalyzer:
+    def __init__(self):
+        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    
+    def predict_druggability(self, protein_sequence: str, 
+                           structure_features: dict = None) -> dict:
+        """Predict if a protein target is druggable"""
+        # Extract sequence features
+        seq_features = self._extract_sequence_features(protein_sequence)
+        
+        # Combine with structure features if available
+        if structure_features:
+            features = {**seq_features, **structure_features}
+        else:
+            features = seq_features
+        
+        # Simplified druggability scoring
+        druggability_score = self._calculate_druggability_score(features)
+        
+        return {
+            'druggability_score': druggability_score,
+            'features': features,
+            'confidence': 'high' if druggability_score > 0.7 else 'medium',
+            'recommendations': self._generate_druggability_recommendations(features)
+        }
+    
+    def _extract_sequence_features(self, sequence: str) -> dict:
+        """Extract features from protein sequence"""
+        # Amino acid composition
+        aa_counts = {aa: sequence.count(aa) for aa in 'ACDEFGHIKLMNPQRSTVWY'}
+        aa_freq = {f'{aa}_freq': count/len(sequence) for aa, count in aa_counts.items()}
+        
+        # Secondary structure propensities (simplified)
+        helix_aa = 'ADEFIKLMRTVY'
+        sheet_aa = 'CFINTVY'
+        loop_aa = 'DEGNPQRS'
+        
+        helix_prop = sum(sequence.count(aa) for aa in helix_aa) / len(sequence)
+        sheet_prop = sum(sequence.count(aa) for aa in sheet_aa) / len(sequence)
+        loop_prop = sum(sequence.count(aa) for aa in loop_aa) / len(sequence)
+        
+        # Hydrophobicity and charge
+        hydrophobic_aa = 'AILMFPWV'
+        charged_aa = 'DEKR'
+        
+        hydrophobic_prop = sum(sequence.count(aa) for aa in hydrophobic_aa) / len(sequence)
+        charged_prop = sum(sequence.count(aa) for aa in charged_aa) / len(sequence)
+        
+        features = {
+            'length': len(sequence),
+            'helix_propensity': helix_prop,
+            'sheet_propensity': sheet_prop,
+            'loop_propensity': loop_prop,
+            'hydrophobic_ratio': hydrophobic_prop,
+            'charged_ratio': charged_prop,
+            **aa_freq
+        }
+        
+        return features
+    
+    def _calculate_druggability_score(self, features: dict) -> float:
+        """Calculate druggability score based on features"""
+        # Simplified scoring based on known druggability factors
+        score = 0.5  # Base score
+        
+        # Favor proteins with binding pockets (inferred from structure)
+        if 'pocket_volume' in features:
+            score += min(features['pocket_volume'] / 1000.0, 0.3)
+        
+        # Favor proteins with appropriate hydrophobicity
+        optimal_hydrophobic = 0.3
+        hydrophobic_penalty = abs(features['hydrophobic_ratio'] - optimal_hydrophobic)
+        score -= hydrophobic_penalty * 0.5
+        
+        # Favor proteins with some charged residues for specificity
+        if features['charged_ratio'] > 0.1:
+            score += 0.1
+        
+        # Penalize very large proteins (harder to drug)
+        if features['length'] > 1000:
+            score -= 0.1
+        
+        return max(0.0, min(1.0, score))
+    
+    def _generate_druggability_recommendations(self, features: dict) -> list:
+        """Generate recommendations for target development"""
+        recommendations = []
+        
+        if features['hydrophobic_ratio'] < 0.2:
+            recommendations.append("Consider allosteric sites - protein may be too polar for orthosteric binding")
+        
+        if features['length'] > 1500:
+            recommendations.append("Large protein - focus on specific domains or protein-protein interaction sites")
+        
+        if features['charged_ratio'] > 0.4:
+            recommendations.append("High charge density - may require charged ligands or consider pH optimization")
+        
+        if not recommendations:
+            recommendations.append("Good druggability profile - proceed with structure-based design")
+        
+        return recommendations
+
+# Network-based target identification
+class DrugTargetNetworkAnalyzer:
+    def __init__(self):
+        self.protein_network = None
+        self.disease_associations = {}
+    
+    def build_protein_interaction_network(self, interactions: list):
+        """Build protein-protein interaction network"""
+        import networkx as nx
+        
+        self.protein_network = nx.Graph()
+        
+        for interaction in interactions:
+            protein1, protein2, confidence = interaction
+            self.protein_network.add_edge(
+                protein1, protein2, 
+                weight=confidence
+            )
+    
+    def identify_key_targets(self, disease_proteins: list) -> dict:
+        """Identify key proteins for drug targeting"""
+        if not self.protein_network:
+            raise ValueError("Network not built. Call build_protein_interaction_network first.")
+        
+        # Calculate centrality measures
+        betweenness = nx.betweenness_centrality(self.protein_network)
+        closeness = nx.closeness_centrality(self.protein_network)
+        eigenvector = nx.eigenvector_centrality(self.protein_network, max_iter=1000)
+        
+        # Focus on disease-associated proteins
+        candidate_targets = {}
+        
+        for protein in disease_proteins:
+            if protein in self.protein_network:
+                # Combine centrality measures
+                combined_score = (
+                    betweenness.get(protein, 0) * 0.4 +
+                    closeness.get(protein, 0) * 0.3 +
+                    eigenvector.get(protein, 0) * 0.3
+                )
+                
+                candidate_targets[protein] = {
+                    'centrality_score': combined_score,
+                    'betweenness': betweenness.get(protein, 0),
+                    'closeness': closeness.get(protein, 0),
+                    'eigenvector': eigenvector.get(protein, 0),
+                    'degree': self.protein_network.degree(protein)
+                }
+        
+        # Sort by combined score
+        sorted_targets = sorted(
+            candidate_targets.items(), 
+            key=lambda x: x[1]['centrality_score'], 
+            reverse=True
+        )
+        
+        return dict(sorted_targets)
+
+# Example usage
+protein_analyzer = ProteinStructureAnalyzer()
+
+# Analyze protein druggability
+sample_sequence = "MKLLKEALAPIYAWLQKGGQWCAKQNLKWMFMYLYNRLDGQAKKCVNVLCQSRYKYIPYISDEESQEAAFSQMNKVLSMGRQFKEAKQLRSGLSFPLLQKLHKEIPQAFKHEMIITVNRTFQAILEAQKLVLRESVVKNRNAEMVLQDSAYQHFYDEGWGEQKYNIQAELKKLSTKDQSLYRLMQAELKNFSPLVQHLNHIQMKVAVKEVLAKGFKWPSRGMNVTHSSQAQQVYSEKQLKILYLKSFKQSYGQPSSEQFQFEMQQHIRFADGTDQVMTMKAKRYSGKVKWRNSLGFAQLEWYQGITGQGKWSPMDNAGWPFVTPSSSTDVPVSSDNRVYQSIGQSQHVRPRRPEKLTFHPQPNFKPCFQMYDFRLTFYFNYLQVMAGLKKACG"
+
+druggability_result = protein_analyzer.predict_druggability(sample_sequence)
+
+print("Protein Druggability Analysis:")
+print(f"Druggability Score: {druggability_result['druggability_score']:.2f}")
+print(f"Confidence: {druggability_result['confidence']}")
+print("Recommendations:")
+for rec in druggability_result['recommendations']:
+    print(f"- {rec}")
+```
+
+### AI-driven pathway analysis
+
+Understanding biological pathways helps identify intervention points:
+
+```python
+class PathwayAnalyzer:
+    def __init__(self):
+        self.pathway_database = {}
+        self.gene_expression_data = None
+    
+    def analyze_disease_pathways(self, disease_genes: list, 
+                               expression_data: pd.DataFrame = None) -> dict:
+        """Analyze pathways disrupted in disease"""
+        # Simplified pathway analysis
+        pathway_scores = {}
+        
+        # Map genes to pathways (simplified)
+        gene_to_pathways = {
+            'EGFR': ['RTK signaling', 'Cell proliferation'],
+            'TP53': ['DNA damage response', 'Apoptosis'],
+            'BRCA1': ['DNA repair', 'Cell cycle'],
+            'KRAS': ['MAPK signaling', 'Cell proliferation'],
+            'PIK3CA': ['PI3K-AKT signaling', 'Metabolism']
+        }
+        
+        # Count pathway involvement
+        pathway_counts = {}
+        for gene in disease_genes:
+            pathways = gene_to_pathways.get(gene, [])
+            for pathway in pathways:
+                pathway_counts[pathway] = pathway_counts.get(pathway, 0) + 1
+        
+        # Calculate pathway disruption scores
+        for pathway, count in pathway_counts.items():
+            # Simple scoring based on number of genes and expression changes
+            base_score = count / len(disease_genes)
+            
+            if expression_data is not None:
+                # Incorporate expression changes
+                pathway_genes = [g for g in disease_genes if pathway in gene_to_pathways.get(g, [])]
+                expression_changes = []
+                
+                for gene in pathway_genes:
+                    if gene in expression_data.columns:
+                        # Calculate average fold change (simplified)
+                        avg_expression = expression_data[gene].mean()
+                        expression_changes.append(abs(avg_expression))
+                
+                if expression_changes:
+                    expression_score = np.mean(expression_changes)
+                    base_score *= (1 + expression_score)
+            
+            pathway_scores[pathway] = base_score
+        
+        return {
+            'pathway_scores': pathway_scores,
+            'top_pathways': sorted(pathway_scores.items(), key=lambda x: x[1], reverse=True),
+            'druggable_targets': self._identify_druggable_pathway_targets(pathway_scores)
+        }
+    
+    def _identify_druggable_pathway_targets(self, pathway_scores: dict) -> list:
+        """Identify druggable targets in disrupted pathways"""
+        # Simplified target identification
+        known_druggable = {
+            'RTK signaling': ['EGFR', 'HER2', 'VEGFR'],
+            'PI3K-AKT signaling': ['PI3K', 'AKT', 'mTOR'],
+            'MAPK signaling': ['MEK', 'ERK', 'RAF'],
+            'DNA damage response': ['PARP', 'ATM', 'CHK1']
+        }
+        
+        druggable_targets = []
+        for pathway, score in pathway_scores.items():
+            if pathway in known_druggable:
+                for target in known_druggable[pathway]:
+                    druggable_targets.append({
+                        'target': target,
+                        'pathway': pathway,
+                        'pathway_score': score,
+                        'target_class': self._get_target_class(target)
+                    })
+        
+        return sorted(druggable_targets, key=lambda x: x['pathway_score'], reverse=True)
+    
+    def _get_target_class(self, target: str) -> str:
+        """Get target class for drug design strategy"""
+        kinases = ['EGFR', 'HER2', 'VEGFR', 'PI3K', 'AKT', 'mTOR', 'MEK', 'ERK', 'RAF', 'ATM', 'CHK1']
+        enzymes = ['PARP']
+        
+        if target in kinases:
+            return 'kinase'
+        elif target in enzymes:
+            return 'enzyme'
+        else:
+            return 'other'
+
+# Example usage
+pathway_analyzer = PathwayAnalyzer()
+
+# Sample disease genes for breast cancer
+disease_genes = ['BRCA1', 'BRCA2', 'TP53', 'EGFR', 'HER2', 'PIK3CA', 'KRAS']
+
+# Analyze pathways
+pathway_results = pathway_analyzer.analyze_disease_pathways(disease_genes)
+
+print("Pathway Analysis Results:")
+print("Top disrupted pathways:")
+for pathway, score in pathway_results['top_pathways'][:3]:
+    print(f"- {pathway}: {score:.2f}")
+
+print("\nDruggable targets:")
+for target_info in pathway_results['druggable_targets'][:5]:
+    print(f"- {target_info['target']} ({target_info['target_class']}) in {target_info['pathway']}")
+```
+
+## Molecular property prediction
+
+### Deep learning for ADMET prediction
+
+ADMET (Absorption, Distribution, Metabolism, Excretion, Toxicity) properties are crucial for drug success:
+
+```python
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+from torch_geometric.nn import GCNConv, global_mean_pool
+from torch_geometric.data import Data, DataLoader
+from rdkit import Chem
+from rdkit.Chem import rdMolDescriptors, AllChem
+import numpy as np
+
+class MolecularGraphNet(nn.Module):
+    """Graph neural network for molecular property prediction"""
+    
+    def __init__(self, num_features=75, hidden_dim=128, num_layers=3, dropout=0.2):
+        super(MolecularGraphNet, self).__init__()
+        
+        self.num_layers = num_layers
+        self.dropout = dropout
+        
+        # Graph convolution layers
+        self.convs = nn.ModuleList()
+        self.convs.append(GCNConv(num_features, hidden_dim))
+        
+        for _ in range(num_layers - 1):
+            self.convs.append(GCNConv(hidden_dim, hidden_dim))
+        
+        # Batch normalization layers
+        self.batch_norms = nn.ModuleList()
+        for _ in range(num_layers):
+            self.batch_norms.append(nn.BatchNorm1d(hidden_dim))
+        
+        # Output layers for different ADMET properties
+        self.solubility_head = nn.Sequential(
+            nn.Linear(hidden_dim, 64),
+            nn.ReLU(),
+            nn.Dropout(dropout),
+            nn.Linear(64, 1)  # LogS (solubility)
+        )
+        
+        self.permeability_head = nn.Sequential(
+            nn.Linear(hidden_dim, 64),
+            nn.ReLU(),
+            nn.Dropout(dropout),
+            nn.Linear(64, 1)  # Caco-2 permeability
+        )
+        
+        self.clearance_head = nn.Sequential(
+            nn.Linear(hidden_dim, 64),
+            nn.ReLU(),
+            nn.Dropout(dropout),
+            nn.Linear(64, 1)  # Hepatic clearance
+        )
+        
+        self.toxicity_head = nn.Sequential(
+            nn.Linear(hidden_dim, 64),
+            nn.ReLU(),
+            nn.Dropout(dropout),
+            nn.Linear(64, 2)  # Binary toxicity classification
+        )
+    
+    def forward(self, data):
+        x, edge_index, batch = data.x, data.edge_index, data.batch
+        
+        # Graph convolution layers
+        for i in range(self.num_layers):
+            x = self.convs[i](x, edge_index)
+            x = self.batch_norms[i](x)
+            x = F.relu(x)
+            x = F.dropout(x, p=self.dropout, training=self.training)
+        
+        # Global pooling
+        x = global_mean_pool(x, batch)
+        
+        # Predict different ADMET properties
+        outputs = {
+            'solubility': self.solubility_head(x),
+            'permeability': self.permeability_head(x),
+            'clearance': self.clearance_head(x),
+            'toxicity': self.toxicity_head(x)
+        }
+        
+        return outputs
+
+class ADMETPredictor:
+    def __init__(self, model_path=None):
+        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        self.model = MolecularGraphNet()
+        
+        if model_path:
+            self.model.load_state_dict(torch.load(model_path, map_location=self.device))
+        
+        self.model.to(self.device)
+        self.model.eval()
+    
+    def smiles_to_graph(self, smiles: str) -> Data:
+        """Convert SMILES string to graph representation"""
+        mol = Chem.MolFromSmiles(smiles)
+        if mol is None:
+            raise ValueError(f"Invalid SMILES: {smiles}")
+        
+        # Add hydrogens
+        mol = Chem.AddHs(mol)
+        
+        # Node features (atom features)
+        node_features = []
+        for atom in mol.GetAtoms():
+            features = [
+                atom.GetAtomicNum(),
+                atom.GetDegree(),
+                atom.GetFormalCharge(),
+                int(atom.GetHybridization()),
+                int(atom.GetIsAromatic()),
+                atom.GetMass(),
+                atom.GetTotalNumHs(),
+                int(atom.IsInRing()),
+                int(atom.IsInRingSize(3)),
+                int(atom.IsInRingSize(4)),
+                int(atom.IsInRingSize(5)),
+                int(atom.IsInRingSize(6)),
+                int(atom.IsInRingSize(7)),
+                int(atom.IsInRingSize(8))
+            ]
+            
+            # One-hot encoding for common atoms
+            atom_types = [1, 6, 7, 8, 9, 15, 16, 17, 35, 53]  # H, C, N, O, F, P, S, Cl, Br, I
+            atom_encoding = [1 if atom.GetAtomicNum() == t else 0 for t in atom_types]
+            
+            features.extend(atom_encoding)
+            node_features.append(features)
+        
+        # Edge indices
+        edge_indices = []
+        for bond in mol.GetBonds():
+            i = bond.GetBeginAtomIdx()
+            j = bond.GetEndAtomIdx()
+            edge_indices.extend([(i, j), (j, i)])  # Undirected graph
+        
+        # Convert to tensors
+        x = torch.tensor(node_features, dtype=torch.float)
+        edge_index = torch.tensor(edge_indices, dtype=torch.long).t().contiguous()
+        
+        return Data(x=x, edge_index=edge_index)
+    
+    def predict_admet(self, smiles: str) -> dict:
+        """Predict ADMET properties for a molecule"""
+        try:
+            # Convert to graph
+            graph_data = self.smiles_to_graph(smiles)
+            graph_data = graph_data.to(self.device)
+            
+            # Add batch dimension
+            graph_data.batch = torch.zeros(graph_data.x.size(0), dtype=torch.long, device=self.device)
+            
+            with torch.no_grad():
+                predictions = self.model(graph_data)
+            
+            # Process predictions
+            results = {
+                'solubility': {
+                    'value': predictions['solubility'].item(),
+                    'interpretation': self._interpret_solubility(predictions['solubility'].item()),
+                    'unit': 'log(mol/L)'
+                },
+                'permeability': {
+                    'value': predictions['permeability'].item(),
+                    'interpretation': self._interpret_permeability(predictions['permeability'].item()),
+                    'unit': 'log(cm/s)'
+                },
+                'clearance': {
+                    'value': predictions['clearance'].item(),
+                    'interpretation': self._interpret_clearance(predictions['clearance'].item()),
+                    'unit': 'mL/min/kg'
+                },
+                'toxicity': {
+                    'probability': torch.softmax(predictions['toxicity'], dim=1)[0, 1].item(),
+                    'prediction': 'toxic' if torch.softmax(predictions['toxicity'], dim=1)[0, 1] > 0.5 else 'non-toxic',
+                    'confidence': max(torch.softmax(predictions['toxicity'], dim=1)[0]).item()
+                }
+            }
+            
+            # Overall drug-likeness score
+            results['drug_likeness_score'] = self._calculate_drug_likeness(results)
+            
+            return results
+            
+        except Exception as e:
+            return {'error': str(e)}
+    
+    def _interpret_solubility(self, value: float) -> str:
+        """Interpret solubility value"""
+        if value > -3:
+            return "Highly soluble"
+        elif value > -5:
+            return "Moderately soluble"
+        else:
+            return "Poorly soluble"
+    
+    def _interpret_permeability(self, value: float) -> str:
+        """Interpret permeability value"""
+        if value > -5:
+            return "High permeability"
+        elif value > -6:
+            return "Moderate permeability"
+        else:
+            return "Low permeability"
+    
+    def _interpret_clearance(self, value: float) -> str:
+        """Interpret clearance value"""
+        if value < 5:
+            return "Low clearance"
+        elif value < 20:
+            return "Moderate clearance"
+        else:
+            return "High clearance"
+    
+    def _calculate_drug_likeness(self, admet_results: dict) -> dict:
+        """Calculate overall drug-likeness score"""
+        score = 0.0
+        factors = []
+        
+        # Solubility contribution
+        sol_val = admet_results['solubility']['value']
+        if sol_val > -3:
+            score += 0.25
+            factors.append("Good solubility")
+        elif sol_val > -5:
+            score += 0.15
+        
+        # Permeability contribution
+        perm_val = admet_results['permeability']['value']
+        if perm_val > -5:
+            score += 0.25
+            factors.append("Good permeability")
+        elif perm_val > -6:
+            score += 0.15
+        
+        # Clearance contribution (moderate is best)
+        clear_val = admet_results['clearance']['value']
+        if 5 <= clear_val <= 20:
+            score += 0.25
+            factors.append("Optimal clearance")
+        elif clear_val < 5:
+            score += 0.15
+        
+        # Toxicity contribution
+        tox_prob = admet_results['toxicity']['probability']
+        if tox_prob < 0.3:
+            score += 0.25
+            factors.append("Low toxicity risk")
+        elif tox_prob < 0.5:
+            score += 0.15
+        
+        return {
+            'score': score,
+            'category': 'Excellent' if score > 0.8 else 'Good' if score > 0.6 else 'Moderate' if score > 0.4 else 'Poor',
+            'positive_factors': factors
+        }
+
+# Example usage and batch processing
+admet_predictor = ADMETPredictor()
+
+# Test molecules
+test_molecules = [
+    "CC(C)CC1=CC=C(C=C1)C(C)C(=O)O",  # Ibuprofen
+    "CC1=CC=C(C=C1)C2=CC(=NN2C3=CC=C(C=C3)S(=O)(=O)N)C(F)(F)F",  # Celecoxib
+    "CN1CCN(CC1)C2=CC=C(C=C2)OCC3COC(O3)(CN4C=NC=N4)C5=C(C=C(C=C5)Cl)Cl"  # Ketoconazole
+]
+
+print("ADMET Predictions:")
+for i, smiles in enumerate(test_molecules):
+    results = admet_predictor.predict_admet(smiles)
+    
+    if 'error' not in results:
+        print(f"\nMolecule {i+1}: {smiles}")
+        print(f"Solubility: {results['solubility']['value']:.2f} ({results['solubility']['interpretation']})")
+        print(f"Permeability: {results['permeability']['value']:.2f} ({results['permeability']['interpretation']})")
+        print(f"Clearance: {results['clearance']['value']:.2f} ({results['clearance']['interpretation']})")
+        print(f"Toxicity: {results['toxicity']['prediction']} (prob: {results['toxicity']['probability']:.2f})")
+        print(f"Drug-likeness: {results['drug_likeness_score']['category']} (score: {results['drug_likeness_score']['score']:.2f})")
+    else:
+        print(f"\nMolecule {i+1}: Error - {results['error']}")
+```
+
+### Multi-objective optimization
+
+Drug design requires optimizing multiple competing properties simultaneously:
+
+```python
+from scipy.optimize import differential_evolution
+import random
+from typing import List, Tuple, Callable
+
+class MultiObjectiveDrugOptimizer:
+    def __init__(self, admet_predictor: ADMETPredictor):
+        self.admet_predictor = admet_predictor
+        self.objectives = []
+        self.constraints = []
+    
+    def add_objective(self, name: str, weight: float, 
+                     maximize: bool = True, target_value: float = None):
+        """Add an optimization objective"""
+        self.objectives.append({
+            'name': name,
+            'weight': weight,
+            'maximize': maximize,
+            'target_value': target_value
+        })
+    
+    def add_constraint(self, name: str, min_value: float = None, 
+                      max_value: float = None):
+        """Add a constraint"""
+        self.constraints.append({
+            'name': name,
+            'min_value': min_value,
+            'max_value': max_value
+        })
+    
+    def evaluate_molecule(self, smiles: str) -> dict:
+        """Evaluate a molecule against objectives and constraints"""
+        admet_results = self.admet_predictor.predict_admet(smiles)
+        
+        if 'error' in admet_results:
+            return {'error': admet_results['error']}
+        
+        # Extract values for objectives
+        values = {
+            'solubility': admet_results['solubility']['value'],
+            'permeability': admet_results['permeability']['value'],
+            'clearance': admet_results['clearance']['value'],
+            'toxicity_prob': admet_results['toxicity']['probability'],
+            'drug_likeness': admet_results['drug_likeness_score']['score']
+        }
+        
+        # Calculate objective function
+        objective_score = 0.0
+        constraint_violations = []
+        
+        for obj in self.objectives:
+            if obj['name'] in values:
+                value = values[obj['name']]
+                
+                if obj['target_value'] is not None:
+                    # Distance from target
+                    score = -abs(value - obj['target_value'])
+                else:
+                    # Maximize or minimize
+                    score = value if obj['maximize'] else -value
+                
+                objective_score += obj['weight'] * score
+        
+        # Check constraints
+        for constraint in self.constraints:
+            if constraint['name'] in values:
+                value = values[constraint['name']]
+                
+                if constraint['min_value'] is not None and value < constraint['min_value']:
+                    constraint_violations.append(f"{constraint['name']} < {constraint['min_value']}")
+                
+                if constraint['max_value'] is not None and value > constraint['max_value']:
+                    constraint_violations.append(f"{constraint['name']} > {constraint['max_value']}")
+        
+        return {
+            'objective_score': objective_score,
+            'constraint_violations': constraint_violations,
+            'values': values,
+            'feasible': len(constraint_violations) == 0
+        }
+    
+    def optimize_lead_compound(self, starting_smiles: str, 
+                             generations: int = 50) -> dict:
+        """Optimize a lead compound using genetic algorithm approach"""
+        # This would integrate with molecular generation/modification methods
+        # For demonstration, we'll use a simplified approach
+        
+        best_molecules = []
+        current_smiles = starting_smiles
+        
+        # Evaluate starting compound
+        baseline = self.evaluate_molecule(starting_smiles)
+        print(f"Baseline compound performance:")
+        if 'error' not in baseline:
+            print(f"Objective score: {baseline['objective_score']:.3f}")
+            print(f"Feasible: {baseline['feasible']}")
+            if baseline['constraint_violations']:
+                print(f"Violations: {', '.join(baseline['constraint_violations'])}")
+        
+        # In a real implementation, this would use:
+        # 1. Molecular generation models (VAE, GAN, Transformer)
+        # 2. Fragment-based design
+        # 3. Structure-based optimization
+        # 4. Synthetic accessibility scoring
+        
+        optimization_result = {
+            'starting_compound': {
+                'smiles': starting_smiles,
+                'evaluation': baseline
+            },
+            'optimization_trajectory': [],
+            'best_compounds': [],
+            'recommendations': self._generate_optimization_recommendations(baseline)
+        }
+        
+        return optimization_result
+    
+    def _generate_optimization_recommendations(self, evaluation: dict) -> List[str]:
+        """Generate recommendations for compound optimization"""
+        recommendations = []
+        
+        if 'values' in evaluation:
+            values = evaluation['values']
+            
+            if values['solubility'] < -5:
+                recommendations.append("Improve solubility: Consider adding polar groups or reducing lipophilicity")
+            
+            if values['permeability'] < -6:
+                recommendations.append("Improve permeability: Consider reducing polar surface area or molecular weight")
+            
+            if values['toxicity_prob'] > 0.5:
+                recommendations.append("Reduce toxicity: Avoid reactive groups and optimize selectivity")
+            
+            if values['clearance'] > 50:
+                recommendations.append("Reduce clearance: Consider metabolic soft spots and CYP interactions")
+        
+        return recommendations
+
+# Pareto frontier analysis for multi-objective optimization
+class ParetoFrontierAnalyzer:
+    def __init__(self):
+        self.molecules = []
+    
+    def add_molecule(self, smiles: str, objectives: dict):
+        """Add a molecule with its objective values"""
+        self.molecules.append({
+            'smiles': smiles,
+            'objectives': objectives
+        })
+    
+    def find_pareto_frontier(self, objective_names: List[str], 
+                           maximize: List[bool]) -> List[dict]:
+        """Find Pareto optimal molecules"""
+        pareto_frontier = []
+        
+        for i, mol_i in enumerate(self.molecules):
+            is_dominated = False
+            
+            for j, mol_j in enumerate(self.molecules):
+                if i != j:
+                    dominates = True
+                    at_least_one_better = False
+                    
+                    # Check if mol_j dominates mol_i
+                    for k, obj_name in enumerate(objective_names):
+                        val_i = mol_i['objectives'].get(obj_name, 0)
+                        val_j = mol_j['objectives'].get(obj_name, 0)
+                        
+                        if maximize[k]:
+                            if val_j < val_i:
+                                dominates = False
+                                break
+                            elif val_j > val_i:
+                                at_least_one_better = True
+                        else:
+                            if val_j > val_i:
+                                dominates = False
+                                break
+                            elif val_j < val_i:
+                                at_least_one_better = True
+                    
+                    if dominates and at_least_one_better:
+                        is_dominated = True
+                        break
+            
+            if not is_dominated:
+                pareto_frontier.append(mol_i)
+        
+        return pareto_frontier
+    
+    def visualize_tradeoffs(self, objective_names: List[str]):
+        """Visualize trade-offs between objectives"""
+        if len(objective_names) != 2:
+            print("Visualization currently supports only 2 objectives")
+            return
+        
+        obj1_name, obj2_name = objective_names
+        
+        # Extract values
+        obj1_values = [mol['objectives'].get(obj1_name, 0) for mol in self.molecules]
+        obj2_values = [mol['objectives'].get(obj2_name, 0) for mol in self.molecules]
+        
+        # Find Pareto frontier
+        pareto_molecules = self.find_pareto_frontier(objective_names, [True, True])
+        pareto_obj1 = [mol['objectives'].get(obj1_name, 0) for mol in pareto_molecules]
+        pareto_obj2 = [mol['objectives'].get(obj2_name, 0) for mol in pareto_molecules]
+        
+        # Plotting
+        plt.figure(figsize=(10, 8))
+        plt.scatter(obj1_values, obj2_values, alpha=0.6, label='All molecules')
+        plt.scatter(pareto_obj1, pareto_obj2, color='red', s=100, 
+                   label='Pareto frontier', edgecolors='black')
+        
+        plt.xlabel(obj1_name.replace('_', ' ').title())
+        plt.ylabel(obj2_name.replace('_', ' ').title())
+        plt.title('Multi-objective Optimization: Trade-off Analysis')
+        plt.legend()
+        plt.grid(True, alpha=0.3)
+        plt.show()
+        
+        return pareto_molecules
+
+# Example usage of multi-objective optimization
+optimizer = MultiObjectiveDrugOptimizer(admet_predictor)
+
+# Define optimization objectives
+optimizer.add_objective('drug_likeness', weight=0.4, maximize=True)
+optimizer.add_objective('solubility', weight=0.3, maximize=True)
+optimizer.add_objective('toxicity_prob', weight=0.3, maximize=False)
+
+# Add constraints
+optimizer.add_constraint('permeability', min_value=-6)
+optimizer.add_constraint('clearance', min_value=2, max_value=30)
+
+# Optimize a lead compound
+lead_smiles = "CC(C)CC1=CC=C(C=C1)C(C)C(=O)O"  # Ibuprofen as starting point
+optimization_result = optimizer.optimize_lead_compound(lead_smiles)
+
+print("\nOptimization Recommendations:")
+for rec in optimization_result['recommendations']:
+    print(f"- {rec}")
+```
+
+## Molecular generation and design
+
+### Generative models for drug discovery
+
+AI can generate novel molecular structures with desired properties:
+
+```python
+import torch
+import torch.nn as nn
+from torch.nn.utils.rnn import pad_sequence
+import torch.nn.functional as F
+from collections import defaultdict
+import re
+
+class SMILESGenerator(nn.Module):
+    """LSTM-based SMILES generator for molecular design"""
+    
+    def __init__(self, vocab_size, embedding_dim=128, hidden_dim=256, num_layers=3):
+        super(SMILESGenerator, self).__init__()
+        
+        self.vocab_size = vocab_size
+        self.embedding_dim = embedding_dim
+        self.hidden_dim = hidden_dim
+        self.num_layers = num_layers
+        
+        self.embedding = nn.Embedding(vocab_size, embedding_dim)
+        self.lstm = nn.LSTM(embedding_dim, hidden_dim, num_layers, 
+                           batch_first=True, dropout=0.3)
+        self.dropout = nn.Dropout(0.3)
+        self.output_layer = nn.Linear(hidden_dim, vocab_size)
+    
+    def forward(self, x, hidden=None):
+        embedded = self.embedding(x)
+        lstm_out, hidden = self.lstm(embedded, hidden)
+        lstm_out = self.dropout(lstm_out)
+        output = self.output_layer(lstm_out)
+        return output, hidden
+    
+    def generate_smiles(self, start_token, max_length=100, temperature=1.0):
+        """Generate SMILES string using trained model"""
+        self.eval()
+        
+        with torch.no_grad():
+            # Initialize
+            current_token = torch.tensor([[start_token]], dtype=torch.long)
+            hidden = None
+            generated = [start_token]
+            
+            for _ in range(max_length):
+                output, hidden = self(current_token, hidden)
+                
+                # Apply temperature scaling
+                logits = output[0, -1] / temperature
+                probabilities = F.softmax(logits, dim=0)
+                
+                # Sample next token
+                next_token = torch.multinomial(probabilities, 1).item()
+                generated.append(next_token)
+                
+                # Check for end token
+                if next_token == 2:  # Assuming 2 is end token
+                    break
+                
+                current_token = torch.tensor([[next_token]], dtype=torch.long)
+        
+        return generated
+
+class ConditionalMolecularGenerator:
+    """Generate molecules with specific properties"""
+    
+    def __init__(self):
+        self.vocab = self._build_vocabulary()
+        self.vocab_size = len(self.vocab)
+        self.char_to_idx = {char: idx for idx, char in enumerate(self.vocab)}
+        self.idx_to_char = {idx: char for idx, char in enumerate(self.vocab)}
+        
+        # Initialize generator model
+        self.generator = SMILESGenerator(self.vocab_size)
+        self.property_predictor = None  # Would be trained ADMET predictor
+    
+    def _build_vocabulary(self):
+        """Build SMILES vocabulary"""
+        # Common SMILES characters
+        chars = ['<start>', '<end>', '<pad>']  # Special tokens
+        chars.extend(list('()[]{}@=#$%+-/\\'))  # SMILES syntax
+        chars.extend(list('0123456789'))  # Numbers
+        chars.extend(list('BCNOPSFClBrI'))  # Common atoms
+        chars.extend(list('cnos'))  # Lowercase atoms (aromatic)
+        
+        return chars
+    
+    def smiles_to_sequence(self, smiles: str) -> List[int]:
+        """Convert SMILES to token sequence"""
+        sequence = [self.char_to_idx['<start>']]
+        
+        for char in smiles:
+            if char in self.char_to_idx:
+                sequence.append(self.char_to_idx[char])
+            else:
+                # Handle unknown characters
+                sequence.append(self.char_to_idx.get('?', 0))
+        
+        sequence.append(self.char_to_idx['<end>'])
+        return sequence
+    
+    def sequence_to_smiles(self, sequence: List[int]) -> str:
+        """Convert token sequence to SMILES"""
+        chars = []
+        for idx in sequence:
+            if idx in self.idx_to_char:
+                char = self.idx_to_char[idx]
+                if char not in ['<start>', '<end>', '<pad>']:
+                    chars.append(char)
+        
+        return ''.join(chars)
+    
+    def generate_molecules_with_properties(self, target_properties: dict, 
+                                         num_molecules: int = 10) -> List[dict]:
+        """Generate molecules with target properties using reinforcement learning approach"""
+        
+        generated_molecules = []
+        
+        for _ in range(num_molecules):
+            # Generate candidate molecule
+            sequence = self.generator.generate_smiles(
+                start_token=self.char_to_idx['<start>'],
+                temperature=0.8
+            )
+            smiles = self.sequence_to_smiles(sequence)
+            
+            # Validate SMILES
+            if self._is_valid_smiles(smiles):
+                # Predict properties (would use actual ADMET predictor)
+                predicted_properties = self._predict_properties(smiles)
+                
+                # Calculate reward based on target properties
+                reward = self._calculate_reward(predicted_properties, target_properties)
+                
+                generated_molecules.append({
+                    'smiles': smiles,
+                    'predicted_properties': predicted_properties,
+                    'reward': reward
+                })
+        
+        # Sort by reward (best first)
+        generated_molecules.sort(key=lambda x: x['reward'], reverse=True)
+        
+        return generated_molecules
+    
+    def _is_valid_smiles(self, smiles: str) -> bool:
+        """Check if SMILES is valid"""
+        try:
+            mol = Chem.MolFromSmiles(smiles)
+            return mol is not None
+        except:
+            return False
+    
+    def _predict_properties(self, smiles: str) -> dict:
+        """Predict molecular properties (placeholder)"""
+        # In real implementation, would use trained ADMET predictor
+        # Here we return dummy values
+        return {
+            'solubility': random.uniform(-8, 2),
+            'permeability': random.uniform(-8, -3),
+            'toxicity_prob': random.uniform(0, 1),
+            'molecular_weight': random.uniform(200, 800)
+        }
+    
+    def _calculate_reward(self, predicted: dict, target: dict) -> float:
+        """Calculate reward based on how close predictions are to targets"""
+        reward = 0.0
+        
+        for prop, target_val in target.items():
+            if prop in predicted:
+                pred_val = predicted[prop]
+                
+                if isinstance(target_val, tuple):  # Range target
+                    min_val, max_val = target_val
+                    if min_val <= pred_val <= max_val:
+                        reward += 1.0
+                    else:
+                        # Penalty for being outside range
+                        distance = min(abs(pred_val - min_val), abs(pred_val - max_val))
+                        reward -= distance / (max_val - min_val)
+                else:  # Point target
+                    distance = abs(pred_val - target_val)
+                    reward -= distance / abs(target_val) if target_val != 0 else distance
+        
+        return reward
+
+# Fragment-based drug design
+class FragmentBasedDesigner:
+    """Fragment-based molecular design using AI"""
+    
+    def __init__(self):
+        self.fragment_library = []
+        self.linking_rules = {}
+        self.admet_predictor = None
+    
+    def build_fragment_library(self, molecules: List[str]):
+        """Build fragment library from known molecules"""
+        fragments = set()
+        
+        for smiles in molecules:
+            mol = Chem.MolFromSmiles(smiles)
+            if mol:
+                # Simple fragmentation (break at rotatable bonds)
+                mol_fragments = self._fragment_molecule(mol)
+                fragments.update(mol_fragments)
+        
+        self.fragment_library = list(fragments)
+        print(f"Built fragment library with {len(self.fragment_library)} fragments")
+    
+    def _fragment_molecule(self, mol):
+        """Fragment molecule at rotatable bonds"""
+        # Simplified fragmentation
+        fragments = []
+        
+        # Find rotatable bonds
+        rotatable_bonds = []
+        for bond in mol.GetBonds():
+            if bond.GetBondType() == Chem.BondType.SINGLE and \
+               not bond.IsInRing() and \
+               bond.GetBeginAtom().GetAtomicNum() != 1 and \
+               bond.GetEndAtom().GetAtomicNum() != 1:
+                rotatable_bonds.append(bond.GetIdx())
+        
+        if rotatable_bonds:
+            # Break at first rotatable bond (simplified)
+            bond_idx = rotatable_bonds[0]
+            fragments_mol = Chem.FragmentOnBonds(mol, [bond_idx])
+            
+            if fragments_mol:
+                fragment_smiles = Chem.MolToSmiles(fragments_mol)
+                # Split by '.' to get individual fragments
+                fragments.extend(fragment_smiles.split('.'))
+        
+        # If no rotatable bonds, use the whole molecule as fragment
+        if not fragments:
+            fragments.append(Chem.MolToSmiles(mol))
+        
+        return fragments
+    
+    def design_molecules_from_fragments(self, target_properties: dict, 
+                                      max_molecules: int = 20) -> List[dict]:
+        """Design molecules by combining fragments"""
+        designed_molecules = []
+        
+        # Simple fragment combination (random pairs)
+        for i in range(max_molecules):
+            if len(self.fragment_library) >= 2:
+                # Select two fragments
+                frag1 = random.choice(self.fragment_library)
+                frag2 = random.choice(self.fragment_library)
+                
+                # Try to link them (simplified)
+                linked_smiles = self._link_fragments(frag1, frag2)
+                
+                if linked_smiles and self._is_valid_smiles(linked_smiles):
+                    # Predict properties
+                    properties = self._predict_fragment_properties(linked_smiles)
+                    
+                    # Evaluate against targets
+                    score = self._evaluate_fragment_design(properties, target_properties)
+                    
+                    designed_molecules.append({
+                        'smiles': linked_smiles,
+                        'fragments': [frag1, frag2],
+                        'properties': properties,
+                        'score': score
+                    })
+        
+        # Sort by score
+        designed_molecules.sort(key=lambda x: x['score'], reverse=True)
+        
+        return designed_molecules
+    
+    def _link_fragments(self, frag1: str, frag2: str) -> str:
+        """Simple fragment linking (placeholder)"""
+        # In real implementation, would use sophisticated linking strategies
+        # This is a very simplified approach
+        
+        # Remove any wildcard atoms and try direct connection
+        clean_frag1 = frag1.replace('*', '')
+        clean_frag2 = frag2.replace('*', '')
+        
+        # Simple concatenation (not chemically valid, just for demo)
+        return clean_frag1 + clean_frag2
+    
+    def _is_valid_smiles(self, smiles: str) -> bool:
+        """Check SMILES validity"""
+        try:
+            mol = Chem.MolFromSmiles(smiles)
+            return mol is not None and mol.GetNumAtoms() > 0
+        except:
+            return False
+    
+    def _predict_fragment_properties(self, smiles: str) -> dict:
+        """Predict properties for fragment-assembled molecule"""
+        # Placeholder - would use actual ADMET predictor
+        return {
+            'molecular_weight': random.uniform(200, 600),
+            'logp': random.uniform(-2, 5),
+            'tpsa': random.uniform(20, 200),
+            'drug_likeness': random.uniform(0, 1)
+        }
+    
+    def _evaluate_fragment_design(self, properties: dict, targets: dict) -> float:
+        """Evaluate designed molecule against targets"""
+        score = 0.0
+        
+        for prop, target in targets.items():
+            if prop in properties:
+                if isinstance(target, tuple):
+                    min_val, max_val = target
+                    if min_val <= properties[prop] <= max_val:
+                        score += 1.0
+                else:
+                    distance = abs(properties[prop] - target)
+                    score -= distance / max(abs(target), 1)
+        
+        return score
+
+# Example usage of molecular generation
+print("Molecular Generation Examples:")
+
+# Initialize generator
+mol_generator = ConditionalMolecularGenerator()
+
+# Define target properties
+target_props = {
+    'solubility': (-3, 0),  # Good solubility range
+    'molecular_weight': (200, 500),  # Drug-like MW
+    'toxicity_prob': (0, 0.3)  # Low toxicity
+}
+
+# Generate molecules
+generated = mol_generator.generate_molecules_with_properties(target_props, num_molecules=5)
+
+print("\nTop generated molecules:")
+for i, mol in enumerate(generated[:3]):
+    print(f"\n{i+1}. SMILES: {mol['smiles']}")
+    print(f"   Reward: {mol['reward']:.2f}")
+    print(f"   Properties: {mol['predicted_properties']}")
+
+# Fragment-based design
+fragment_designer = FragmentBasedDesigner()
+
+# Build fragment library from known drugs
+known_drugs = [
+    "CC(C)CC1=CC=C(C=C1)C(C)C(=O)O",  # Ibuprofen
+    "CC1=CC=C(C=C1)C2=CC(=NN2C3=CC=C(C=C3)S(=O)(=O)N)C(F)(F)F",  # Celecoxib
+    "NC1=CC=CC=C1C(=O)O"  # Anthranilate (simplified)
+]
+
+fragment_designer.build_fragment_library(known_drugs)
+
+# Design new molecules
+fragment_targets = {
+    'molecular_weight': (300, 450),
+    'drug_likeness': (0.6, 1.0)
+}
+
+fragment_designs = fragment_designer.design_molecules_from_fragments(
+    fragment_targets, max_molecules=10
+)
+
+print(f"\nFragment-based designs:")
+for i, design in enumerate(fragment_designs[:3]):
+    if design['score'] > 0:
+        print(f"\n{i+1}. SMILES: {design['smiles']}")
+        print(f"   Score: {design['score']:.2f}")
+        print(f"   Fragments: {design['fragments']}")
+```
+
+## Clinical trial optimization
+
+### Patient stratification and biomarker discovery
+
+AI helps identify patient subgroups most likely to benefit from treatment:
+
+```python
+import pandas as pd
+import numpy as np
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.model_selection import train_test_split, cross_val_score
+from sklearn.preprocessing import StandardScaler
+from sklearn.cluster import KMeans
+from sklearn.decomposition import PCA
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+class ClinicalTrialOptimizer:
+    def __init__(self):
+        self.patient_stratifier = None
+        self.biomarker_selector = None
+        self.response_predictor = None
+        self.scaler = StandardScaler()
+    
+    def analyze_patient_data(self, patient_df: pd.DataFrame, 
+                           response_column: str) -> dict:
+        """Comprehensive analysis of patient data for trial optimization"""
+        
+        # Separate features and response
+        feature_columns = [col for col in patient_df.columns if col != response_column]
+        X = patient_df[feature_columns]
+        y = patient_df[response_column]
+        
+        # Handle missing values
+        X_clean = X.fillna(X.median())
+        
+        # Scale features
+        X_scaled = self.scaler.fit_transform(X_clean)
+        
+        # Patient stratification
+        stratification_results = self._stratify_patients(X_scaled, y)
+        
+        # Biomarker discovery
+        biomarker_results = self._discover_biomarkers(X_clean, y, feature_columns)
+        
+        # Response prediction model
+        prediction_results = self._build_response_predictor(X_scaled, y)
+        
+        # Trial design recommendations
+        recommendations = self._generate_trial_recommendations(
+            stratification_results, biomarker_results, prediction_results
+        )
+        
+        return {
+            'patient_stratification': stratification_results,
+            'biomarker_discovery': biomarker_results,
+            'response_prediction': prediction_results,
+            'trial_recommendations': recommendations
+        }
+    
+    def _stratify_patients(self, X_scaled: np.ndarray, y: np.ndarray) -> dict:
+        """Identify patient subgroups for stratification"""
+        # Dimensionality reduction for visualization
+        pca = PCA(n_components=2)
+        X_pca = pca.fit_transform(X_scaled)
+        
+        # Clustering to identify patient subgroups
+        optimal_clusters = self._find_optimal_clusters(X_scaled, max_clusters=10)
+        
+        kmeans = KMeans(n_clusters=optimal_clusters, random_state=42)
+        cluster_labels = kmeans.fit_predict(X_scaled)
+        
+        # Analyze response rates per cluster
+        cluster_analysis = {}
+        for cluster_id in range(optimal_clusters):
+            cluster_mask = cluster_labels == cluster_id
+            cluster_responses = y[cluster_mask]
+            
+            cluster_analysis[cluster_id] = {
+                'size': np.sum(cluster_mask),
+                'response_rate': np.mean(cluster_responses) if len(cluster_responses) > 0 else 0,
+                'response_std': np.std(cluster_responses) if len(cluster_responses) > 0 else 0
+            }
+        
+        # Find best responding clusters
+        sorted_clusters = sorted(
+            cluster_analysis.items(), 
+            key=lambda x: x[1]['response_rate'], 
+            reverse=True
+        )
+        
+        return {
+            'num_clusters': optimal_clusters,
+            'cluster_analysis': cluster_analysis,
+            'best_responding_clusters': sorted_clusters[:3],
+            'pca_coordinates': X_pca,
+            'cluster_labels': cluster_labels
+        }
+    
+    def _find_optimal_clusters(self, X: np.ndarray, max_clusters: int = 10) -> int:
+        """Find optimal number of clusters using elbow method"""
+        inertias = []
+        k_range = range(2, min(max_clusters + 1, len(X) // 10))
+        
+        for k in k_range:
+            kmeans = KMeans(n_clusters=k, random_state=42)
+            kmeans.fit(X)
+            inertias.append(kmeans.inertia_)
+        
+        # Find elbow point (simplified)
+        if len(inertias) < 2:
+            return 2
+        
+        # Calculate rate of change
+        rates = [inertias[i] - inertias[i+1] for i in range(len(inertias)-1)]
+        
+        # Find largest drop
+        max_rate_idx = np.argmax(rates)
+        optimal_k = k_range[max_rate_idx]
+        
+        return optimal_k
+    
+    def _discover_biomarkers(self, X: pd.DataFrame, y: np.ndarray, 
+                           feature_names: list) -> dict:
+        """Discover biomarkers predictive of treatment response"""
+        # Train random forest for feature importance
+        rf = RandomForestClassifier(n_estimators=100, random_state=42)
+        rf.fit(X, y)
+        
+        # Get feature importances
+        importance_scores = rf.feature_importances_
+        
+        # Rank biomarkers
+        biomarker_ranking = list(zip(feature_names, importance_scores))
+        biomarker_ranking.sort(key=lambda x: x[1], reverse=True)
+        
+        # Statistical analysis for top biomarkers
+        top_biomarkers = biomarker_ranking[:10]
+        biomarker_stats = {}
+        
+        for biomarker, importance in top_biomarkers:
+            if biomarker in X.columns:
+                # Responder vs non-responder analysis
+                responder_values = X[biomarker][y == 1]
+                non_responder_values = X[biomarker][y == 0]
+                
+                biomarker_stats[biomarker] = {
+                    'importance': importance,
+                    'responder_mean': responder_values.mean(),
+                    'responder_std': responder_values.std(),
+                    'non_responder_mean': non_responder_values.mean(),
+                    'non_responder_std': non_responder_values.std(),
+                    'fold_change': responder_values.mean() / non_responder_values.mean() if non_responder_values.mean() != 0 else np.inf
+                }
+        
+        return {
+            'top_biomarkers': top_biomarkers,
+            'biomarker_statistics': biomarker_stats,
+            'feature_importance_scores': dict(biomarker_ranking)
+        }
+    
+    def _build_response_predictor(self, X_scaled: np.ndarray, y: np.ndarray) -> dict:
+        """Build predictive model for treatment response"""
+        # Split data
+        X_train, X_test, y_train, y_test = train_test_split(
+            X_scaled, y, test_size=0.2, random_state=42, stratify=y
+        )
+        
+        # Train model
+        rf_model = RandomForestClassifier(
+            n_estimators=200,
+            max_depth=10,
+            min_samples_split=5,
+            random_state=42
+        )
+        
+        rf_model.fit(X_train, y_train)
+        
+        # Evaluate model
+        train_score = rf_model.score(X_train, y_train)
+        test_score = rf_model.score(X_test, y_test)
+        
+        # Cross-validation
+        cv_scores = cross_val_score(rf_model, X_scaled, y, cv=5)
+        
+        # Prediction probabilities for test set
+        test_probabilities = rf_model.predict_proba(X_test)[:, 1]
+        
+        return {
+            'model': rf_model,
+            'train_accuracy': train_score,
+            'test_accuracy': test_score,
+            'cv_scores': cv_scores,
+            'cv_mean': cv_scores.mean(),
+            'cv_std': cv_scores.std(),
+            'test_probabilities': test_probabilities
+        }
+    
+    def _generate_trial_recommendations(self, stratification: dict, 
+                                      biomarkers: dict, 
+                                      prediction: dict) -> list:
+        """Generate recommendations for trial design optimization"""
+        recommendations = []
+        
+        # Stratification recommendations
+        best_clusters = stratification['best_responding_clusters']
+        if len(best_clusters) > 0:
+            best_cluster_id, best_cluster_data = best_clusters[0]
+            if best_cluster_data['response_rate'] > 0.6:
+                recommendations.append({
+                    'type': 'patient_selection',
+                    'priority': 'high',
+                    'recommendation': f"Focus recruitment on patient subgroup {best_cluster_id} with {best_cluster_data['response_rate']:.1%} response rate"
+                })
+        
+        # Biomarker recommendations
+        top_biomarkers = biomarkers['top_biomarkers']
+        if len(top_biomarkers) > 0:
+            top_biomarker, top_importance = top_biomarkers[0]
+            recommendations.append({
+                'type': 'biomarker_selection',
+                'priority': 'high',
+                'recommendation': f"Use {top_biomarker} as primary stratification biomarker (importance: {top_importance:.3f})"
+            })
+            
+            # Additional biomarkers
+            if len(top_biomarkers) > 1:
+                secondary_biomarkers = [name for name, _ in top_biomarkers[1:4]]
+                recommendations.append({
+                    'type': 'biomarker_panel',
+                    'priority': 'medium',
+                    'recommendation': f"Consider biomarker panel including: {', '.join(secondary_biomarkers)}"
+                })
+        
+        # Model performance recommendations
+        if prediction['cv_mean'] > 0.75:
+            recommendations.append({
+                'type': 'predictive_modeling',
+                'priority': 'high',
+                'recommendation': f"Implement predictive model for patient selection (CV accuracy: {prediction['cv_mean']:.2%})"
+            })
+        elif prediction['cv_mean'] > 0.65:
+            recommendations.append({
+                'type': 'predictive_modeling',
+                'priority': 'medium',
+                'recommendation': f"Consider predictive enrichment strategy (moderate accuracy: {prediction['cv_mean']:.2%})"
+            })
+        
+        # Trial size recommendations
+        overall_response_rate = np.mean([cluster['response_rate'] for cluster in stratification['cluster_analysis'].values()])
+        if overall_response_rate < 0.3:
+            recommendations.append({
+                'type': 'sample_size',
+                'priority': 'high',
+                'recommendation': f"Increase sample size due to low overall response rate ({overall_response_rate:.1%})"
+            })
+        
+        return recommendations
+    
+    def design_adaptive_trial(self, patient_data: pd.DataFrame, 
+                            response_column: str) -> dict:
+        """Design adaptive clinical trial based on interim analysis"""
+        
+        analysis_results = self.analyze_patient_data(patient_data, response_column)
+        
+        # Adaptive design parameters
+        adaptive_design = {
+            'initial_sample_size': len(patient_data),
+            'interim_analyses': [],
+            'futility_boundaries': [],
+            'efficacy_boundaries': [],
+            'adaptation_rules': []
+        }
+        
+        # Define interim analysis schedule
+        total_patients = len(patient_data)
+        interim_points = [int(total_patients * fraction) for fraction in [0.25, 0.5, 0.75]]
+        
+        for i, interim_n in enumerate(interim_points):
+            interim_data = patient_data.iloc[:interim_n]
+            interim_response_rate = interim_data[response_column].mean()
+            
+            # Futility analysis
+            if interim_response_rate < 0.15:  # Historical control
+                adaptive_design['adaptation_rules'].append({
+                    'analysis_point': i + 1,
+                    'n_patients': interim_n,
+                    'action': 'stop_for_futility',
+                    'response_rate': interim_response_rate
+                })
+            
+            # Efficacy analysis
+            elif interim_response_rate > 0.4:  # Promising threshold
+                adaptive_design['adaptation_rules'].append({
+                    'analysis_point': i + 1,
+                    'n_patients': interim_n,
+                    'action': 'early_efficacy',
+                    'response_rate': interim_response_rate
+                })
+            
+            # Sample size re-estimation
+            else:
+                # Calculate revised sample size based on observed effect
+                adaptive_design['adaptation_rules'].append({
+                    'analysis_point': i + 1,
+                    'n_patients': interim_n,
+                    'action': 'continue_with_adjustment',
+                    'response_rate': interim_response_rate,
+                    'sample_size_adjustment': self._calculate_sample_size_adjustment(interim_response_rate)
+                })
+        
+        return {
+            'adaptive_design': adaptive_design,
+            'patient_analysis': analysis_results,
+            'implementation_timeline': self._create_implementation_timeline(adaptive_design)
+        }
+    
+    def _calculate_sample_size_adjustment(self, observed_response_rate: float) -> dict:
+        """Calculate sample size adjustment based on observed response"""
+        # Simplified power calculation for response rate
+        alpha = 0.05
+        power = 0.8
+        historical_response = 0.2
+        
+        effect_size = abs(observed_response_rate - historical_response)
+        
+        if effect_size > 0.2:  # Large effect
+            adjustment_factor = 0.8  # Reduce sample size
+        elif effect_size > 0.1:  # Medium effect
+            adjustment_factor = 1.0  # No change
+        else:  # Small effect
+            adjustment_factor = 1.3  # Increase sample size
+        
+        return {
+            'adjustment_factor': adjustment_factor,
+            'observed_effect_size': effect_size,
+            'recommendation': 'reduce' if adjustment_factor < 1 else 'increase' if adjustment_factor > 1 else 'maintain'
+        }
+    
+    def _create_implementation_timeline(self, adaptive_design: dict) -> dict:
+        """Create implementation timeline for adaptive trial"""
+        timeline = {
+            'phase_1_setup': '0-2 months',
+            'patient_recruitment': '3-18 months',
+            'interim_analyses': {
+                'interim_1': '6 months',
+                'interim_2': '12 months', 
+                'interim_3': '16 months'
+            },
+            'final_analysis': '20 months',
+            'report_writing': '21-24 months'
+        }
+        
+        return timeline
+
+# Example usage with synthetic clinical trial data
+def create_synthetic_trial_data(n_patients: int = 200) -> pd.DataFrame:
+    """Create synthetic patient data for demonstration"""
+    np.random.seed(42)
+    
+    # Patient characteristics
+    age = np.random.normal(60, 15, n_patients)
+    age = np.clip(age, 18, 90)  # Realistic age range
+    
+    gender = np.random.choice(['M', 'F'], n_patients)
+    
+    # Biomarkers (log-normal distribution)
+    biomarker_1 = np.random.lognormal(2, 1, n_patients)
+    biomarker_2 = np.random.normal(10, 3, n_patients)
+    biomarker_3 = np.random.exponential(5, n_patients)
+    
+    # Disease severity score
+    disease_severity = np.random.uniform(1, 10, n_patients)
+    
+    # Prior treatments
+    prior_treatments = np.random.poisson(2, n_patients)
+    
+    # Calculate response probability based on characteristics
+    response_prob = 0.1 + 0.3 * (biomarker_1 > 5) + 0.2 * (biomarker_2 > 12) - 0.1 * (disease_severity > 7)
+    response_prob = np.clip(response_prob, 0, 1)
+    
+    # Generate response outcome
+    response = np.random.binomial(1, response_prob, n_patients)
+    
+    return pd.DataFrame({
+        'age': age,
+        'gender': gender,
+        'biomarker_1': biomarker_1,
+        'biomarker_2': biomarker_2,
+        'biomarker_3': biomarker_3,
+        'disease_severity': disease_severity,
+        'prior_treatments': prior_treatments,
+        'treatment_response': response
+    })
+
+# Run clinical trial optimization
+trial_optimizer = ClinicalTrialOptimizer()
+
+# Generate synthetic data
+patient_data = create_synthetic_trial_data(n_patients=300)
+
+# Analyze for trial optimization
+optimization_results = trial_optimizer.analyze_patient_data(
+    patient_data, 
+    response_column='treatment_response'
+)
+
+print("Clinical Trial Optimization Results:")
+
+# Patient stratification results
+stratification = optimization_results['patient_stratification']
+print(f"\nPatient Stratification:")
+print(f"Optimal clusters: {stratification['num_clusters']}")
+
+print("Best responding patient subgroups:")
+for cluster_id, cluster_data in stratification['best_responding_clusters']:
+    print(f"- Cluster {cluster_id}: {cluster_data['response_rate']:.1%} response rate ({cluster_data['size']} patients)")
+
+# Biomarker discovery results
+biomarkers = optimization_results['biomarker_discovery']
+print(f"\nTop Biomarkers:")
+for biomarker, importance in biomarkers['top_biomarkers'][:5]:
+    stats = biomarkers['biomarker_statistics'].get(biomarker, {})
+    print(f"- {biomarker}: importance {importance:.3f}")
+    if 'fold_change' in stats:
+        print(f"  Fold change (responder/non-responder): {stats['fold_change']:.2f}")
+
+# Prediction model results
+prediction = optimization_results['response_prediction']
+print(f"\nResponse Prediction Model:")
+print(f"Cross-validation accuracy: {prediction['cv_mean']:.2%} ± {prediction['cv_std']:.2%}")
+
+# Recommendations
+recommendations = optimization_results['trial_recommendations']
+print(f"\nTrial Design Recommendations:")
+for rec in recommendations:
+    priority = rec['priority'].upper()
+    print(f"[{priority}] {rec['recommendation']}")
+
+# Design adaptive trial
+adaptive_results = trial_optimizer.design_adaptive_trial(patient_data, 'treatment_response')
+
+print(f"\nAdaptive Trial Design:")
+adaptive_design = adaptive_results['adaptive_design']
+print(f"Initial sample size: {adaptive_design['initial_sample_size']}")
+
+print("Adaptation rules:")
+for rule in adaptive_design['adaptation_rules']:
+    action = rule['action']
+    response_rate = rule['response_rate']
+    n_patients = rule['n_patients']
+    print(f"- At {n_patients} patients ({response_rate:.1%} response): {action}")
+```
+
+The integration of AI in drug discovery represents a paradigm shift from traditional approaches to data-driven, predictive methodologies. By combining molecular property prediction, generative design, clinical trial optimization, and personalized medicine approaches, AI accelerates every stage of the drug development process while reducing costs and improving success rates.
+
+As demonstrated through EderSpark's work in semantic search and knowledge discovery, the future of pharmaceutical research lies in the seamless integration of these AI technologies, creating comprehensive platforms that can identify targets, design molecules, predict outcomes, and optimize clinical strategies in an integrated workflow.

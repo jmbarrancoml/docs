@@ -1,0 +1,1374 @@
+---
+title: Protein structure and function prediction
+description: Deep learning approaches to protein folding, structure prediction, and functional annotation using transformer models and geometric deep learning
+---
+
+# Protein structure and function prediction
+
+Proteins are the molecular machines of life, and understanding their three-dimensional structure is crucial for comprehending their function, designing new drugs, and engineering novel biological systems. The relationship between protein sequence and structure—known as the protein folding problem—has been one of biology's greatest challenges for over 50 years. Recent breakthroughs in AI, particularly with models like AlphaFold, have revolutionized this field, achieving near-experimental accuracy in structure prediction and opening new frontiers in structural biology.
+
+## The protein folding challenge
+
+### Levinthal's paradox and the folding landscape
+
+The protein folding problem emerges from the astronomical number of possible conformations a protein chain can adopt. For a protein with n amino acids, each with φ (phi) and ψ (psi) backbone angles, the conformational space scales exponentially. Levinthal calculated that a small protein would require more time than the age of the universe to sample all possible conformations randomly, yet proteins fold in seconds to minutes.
+
+The solution lies in the folding funnel concept: proteins follow preferred pathways through conformational space, guided by energetically favorable interactions. AI models learn to navigate this landscape by recognizing patterns in sequence-structure relationships across millions of known protein structures.
+
+### Energy functions and physical constraints
+
+Protein folding is governed by several key physical principles:
+
+**Hydrogen bonding**: Backbone and side-chain hydrogen bonds provide directional interactions that stabilize secondary structures (α-helices and β-sheets) and overall protein architecture.
+
+**Hydrophobic effect**: Non-polar amino acids tend to cluster together, excluding water and forming a hydrophobic core that provides stability.
+
+**Van der Waals interactions**: Short-range attractive and repulsive forces between atoms contribute to optimal packing density.
+
+**Electrostatic interactions**: Charged residues can form salt bridges or create unfavorable repulsions that influence folding pathways.
+
+**Entropic effects**: The loss of conformational entropy upon folding must be overcome by favorable enthalpic interactions.
+
+## Deep learning architectures for structure prediction
+
+### Transformer models for protein sequences
+
+Modern protein structure prediction relies heavily on transformer architectures adapted for biological sequences:
+
+```python
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+import numpy as np
+from torch.nn import TransformerEncoder, TransformerEncoderLayer
+import math
+
+class ProteinTransformer(nn.Module):
+    """Transformer model for protein sequence analysis and structure prediction"""
+    
+    def __init__(self, vocab_size=21, d_model=512, nhead=8, num_layers=6, 
+                 max_seq_length=1024, dropout=0.1):
+        super(ProteinTransformer, self).__init__()
+        
+        self.d_model = d_model
+        self.max_seq_length = max_seq_length
+        
+        # Amino acid embedding
+        self.aa_embedding = nn.Embedding(vocab_size, d_model)
+        
+        # Positional encoding
+        self.pos_encoding = PositionalEncoding(d_model, dropout, max_seq_length)
+        
+        # Transformer encoder layers
+        encoder_layers = TransformerEncoderLayer(
+            d_model=d_model,
+            nhead=nhead,
+            dim_feedforward=2048,
+            dropout=dropout,
+            activation='gelu'
+        )
+        self.transformer_encoder = TransformerEncoder(encoder_layers, num_layers)
+        
+        # Output heads for different predictions
+        self.secondary_structure_head = nn.Linear(d_model, 8)  # 8-class SS prediction
+        self.contact_prediction_head = nn.Bilinear(d_model, d_model, 1)  # Contact prediction
+        self.distance_prediction_head = nn.Bilinear(d_model, d_model, 37)  # Distance bins
+        
+        # Confidence prediction
+        self.confidence_head = nn.Linear(d_model, 1)
+        
+        self._init_weights()
+    
+    def _init_weights(self):
+        """Initialize weights using Xavier/Glorot initialization"""
+        for module in self.modules():
+            if isinstance(module, nn.Linear):
+                nn.init.xavier_uniform_(module.weight)
+                if module.bias is not None:
+                    nn.init.zeros_(module.bias)
+            elif isinstance(module, nn.Embedding):
+                nn.init.normal_(module.weight, std=0.02)
+    
+    def forward(self, src, src_key_padding_mask=None):
+        """
+        Forward pass through the transformer
+        
+        Args:
+            src: Input token indices [seq_len, batch_size]
+            src_key_padding_mask: Padding mask [batch_size, seq_len]
+        """
+        # Embedding and positional encoding
+        src_emb = self.aa_embedding(src) * math.sqrt(self.d_model)
+        src_emb = self.pos_encoding(src_emb)
+        
+        # Transformer encoding
+        memory = self.transformer_encoder(src_emb, src_key_padding_mask=src_key_padding_mask)
+        
+        # Predictions
+        seq_len, batch_size, d_model = memory.shape
+        
+        # Secondary structure prediction (per-residue)
+        ss_logits = self.secondary_structure_head(memory)  # [seq_len, batch_size, 8]
+        
+        # Contact and distance prediction (pairwise)
+        memory_t = memory.transpose(0, 1)  # [batch_size, seq_len, d_model]
+        
+        # Create pairwise representations for contact prediction
+        contact_logits = torch.zeros(batch_size, seq_len, seq_len)
+        distance_logits = torch.zeros(batch_size, seq_len, seq_len, 37)
+        
+        for i in range(seq_len):
+            for j in range(seq_len):
+                contact_logits[:, i, j] = self.contact_prediction_head(
+                    memory_t[:, i, :], memory_t[:, j, :]
+                ).squeeze(-1)
+                
+                distance_logits[:, i, j, :] = self.distance_prediction_head(
+                    memory_t[:, i, :], memory_t[:, j, :]
+                )
+        
+        # Confidence prediction
+        confidence_scores = self.confidence_head(memory)  # [seq_len, batch_size, 1]
+        
+        return {
+            'secondary_structure': ss_logits,
+            'contact_map': contact_logits,
+            'distance_map': distance_logits,
+            'confidence': confidence_scores,
+            'representations': memory
+        }
+
+class PositionalEncoding(nn.Module):
+    """Positional encoding for transformer models"""
+    
+    def __init__(self, d_model, dropout=0.1, max_len=5000):
+        super(PositionalEncoding, self).__init__()
+        self.dropout = nn.Dropout(p=dropout)
+        
+        pe = torch.zeros(max_len, d_model)
+        position = torch.arange(0, max_len, dtype=torch.float).unsqueeze(1)
+        div_term = torch.exp(torch.arange(0, d_model, 2).float() * 
+                           (-math.log(10000.0) / d_model))
+        
+        pe[:, 0::2] = torch.sin(position * div_term)
+        pe[:, 1::2] = torch.cos(position * div_term)
+        pe = pe.unsqueeze(0).transpose(0, 1)
+        
+        self.register_buffer('pe', pe)
+    
+    def forward(self, x):
+        x = x + self.pe[:x.size(0), :]
+        return self.dropout(x)
+
+# Geometric deep learning for 3D structure
+class GeometricProteinNet(nn.Module):
+    """Geometric neural network that operates on protein 3D coordinates"""
+    
+    def __init__(self, hidden_dim=128, num_layers=4):
+        super(GeometricProteinNet, self).__init__()
+        
+        self.hidden_dim = hidden_dim
+        self.num_layers = num_layers
+        
+        # Node features (per residue)
+        self.node_embedding = nn.Linear(21, hidden_dim)  # AA type + features
+        
+        # Edge features (pairwise distances and orientations)
+        self.edge_embedding = nn.Linear(16, hidden_dim)  # Distance + angular features
+        
+        # Graph convolution layers
+        self.conv_layers = nn.ModuleList([
+            GeometricConvLayer(hidden_dim) for _ in range(num_layers)
+        ])
+        
+        # Output heads
+        self.structure_refinement = nn.Linear(hidden_dim, 3)  # Coordinate updates
+        self.energy_prediction = nn.Linear(hidden_dim, 1)  # Energy per residue
+        
+    def forward(self, node_features, edge_features, coordinates):
+        """
+        Forward pass through geometric network
+        
+        Args:
+            node_features: [N, 21] - one-hot amino acid types
+            edge_features: [N, N, 16] - pairwise geometric features
+            coordinates: [N, 3] - current 3D coordinates
+        """
+        # Node embeddings
+        h_nodes = self.node_embedding(node_features)
+        
+        # Edge embeddings
+        N = node_features.size(0)
+        h_edges = self.edge_embedding(edge_features.view(N * N, -1)).view(N, N, -1)
+        
+        # Graph convolutions
+        for conv_layer in self.conv_layers:
+            h_nodes = conv_layer(h_nodes, h_edges, coordinates)
+        
+        # Predictions
+        coord_updates = self.structure_refinement(h_nodes)
+        energy_scores = self.energy_prediction(h_nodes)
+        
+        # Update coordinates
+        refined_coordinates = coordinates + coord_updates
+        
+        return {
+            'coordinates': refined_coordinates,
+            'energy': energy_scores,
+            'node_features': h_nodes
+        }
+
+class GeometricConvLayer(nn.Module):
+    """Single layer of geometric convolution"""
+    
+    def __init__(self, hidden_dim):
+        super(GeometricConvLayer, self).__init__()
+        
+        self.hidden_dim = hidden_dim
+        self.message_net = nn.Sequential(
+            nn.Linear(hidden_dim * 2 + hidden_dim, hidden_dim),  # node_i + node_j + edge
+            nn.ReLU(),
+            nn.Linear(hidden_dim, hidden_dim)
+        )
+        
+        self.update_net = nn.Sequential(
+            nn.Linear(hidden_dim * 2, hidden_dim),  # old_node + aggregated_messages
+            nn.ReLU(),
+            nn.Linear(hidden_dim, hidden_dim)
+        )
+        
+    def forward(self, node_features, edge_features, coordinates):
+        """
+        Geometric convolution step
+        """
+        N = node_features.size(0)
+        messages = torch.zeros_like(node_features)
+        
+        # Compute messages from neighbors
+        for i in range(N):
+            for j in range(N):
+                if i != j:  # Don't self-message
+                    # Create message
+                    message_input = torch.cat([
+                        node_features[i],
+                        node_features[j], 
+                        edge_features[i, j]
+                    ])
+                    
+                    message = self.message_net(message_input)
+                    messages[i] += message
+        
+        # Update node features
+        update_input = torch.cat([node_features, messages], dim=1)
+        updated_nodes = self.update_net(update_input)
+        
+        return updated_nodes
+
+# Example usage and training
+class ProteinStructurePredictor:
+    def __init__(self, device='cuda' if torch.cuda.is_available() else 'cpu'):
+        self.device = device
+        
+        # Initialize models
+        self.sequence_model = ProteinTransformer().to(device)
+        self.geometric_model = GeometricProteinNet().to(device)
+        
+        # Amino acid vocabulary
+        self.aa_vocab = {
+            'A': 0, 'C': 1, 'D': 2, 'E': 3, 'F': 4, 'G': 5, 'H': 6, 'I': 7,
+            'K': 8, 'L': 9, 'M': 10, 'N': 11, 'P': 12, 'Q': 13, 'R': 14, 
+            'S': 15, 'T': 16, 'V': 17, 'W': 18, 'Y': 19, 'X': 20  # X for unknown
+        }
+        
+    def sequence_to_tokens(self, sequence: str) -> torch.Tensor:
+        """Convert protein sequence to token indices"""
+        tokens = [self.aa_vocab.get(aa, 20) for aa in sequence.upper()]
+        return torch.tensor(tokens, dtype=torch.long, device=self.device)
+    
+    def predict_structure(self, sequence: str, num_iterations=10) -> dict:
+        """
+        Predict protein structure from sequence
+        
+        Args:
+            sequence: Protein sequence string
+            num_iterations: Number of structure refinement iterations
+        """
+        # Tokenize sequence
+        tokens = self.sequence_to_tokens(sequence).unsqueeze(1)  # [seq_len, 1]
+        
+        # Initial sequence-based predictions
+        with torch.no_grad():
+            seq_predictions = self.sequence_model(tokens)
+        
+        # Extract contact predictions and convert to distance constraints
+        contact_map = torch.sigmoid(seq_predictions['contact_map'].squeeze(0))
+        distance_predictions = torch.softmax(seq_predictions['distance_map'].squeeze(0), dim=-1)
+        
+        # Initialize coordinates (random or from template)
+        N = len(sequence)
+        coordinates = self._initialize_coordinates(N)
+        
+        # Create node features (one-hot amino acid encoding)
+        node_features = torch.zeros(N, 21, device=self.device)
+        for i, aa in enumerate(sequence.upper()):
+            aa_idx = self.aa_vocab.get(aa, 20)
+            node_features[i, aa_idx] = 1.0
+        
+        # Iterative structure refinement
+        refined_coordinates = coordinates
+        
+        for iteration in range(num_iterations):
+            # Compute geometric features
+            edge_features = self._compute_edge_features(refined_coordinates)
+            
+            # Geometric refinement
+            with torch.no_grad():
+                geom_output = self.geometric_model(node_features, edge_features, refined_coordinates)
+                refined_coordinates = geom_output['coordinates']
+        
+        # Calculate final metrics
+        final_metrics = self._calculate_structure_metrics(
+            refined_coordinates, contact_map, distance_predictions
+        )
+        
+        return {
+            'coordinates': refined_coordinates.cpu().numpy(),
+            'sequence': sequence,
+            'contact_predictions': contact_map.cpu().numpy(),
+            'distance_predictions': distance_predictions.cpu().numpy(),
+            'secondary_structure': torch.softmax(seq_predictions['secondary_structure'].squeeze(1), dim=-1).cpu().numpy(),
+            'confidence_scores': torch.sigmoid(seq_predictions['confidence'].squeeze(1)).cpu().numpy(),
+            'metrics': final_metrics
+        }
+    
+    def _initialize_coordinates(self, N: int) -> torch.Tensor:
+        """Initialize random coordinates for structure prediction"""
+        # Simple random initialization (in practice, would use better strategies)
+        coordinates = torch.randn(N, 3, device=self.device) * 10.0
+        return coordinates
+    
+    def _compute_edge_features(self, coordinates: torch.Tensor) -> torch.Tensor:
+        """Compute pairwise geometric features between residues"""
+        N = coordinates.size(0)
+        edge_features = torch.zeros(N, N, 16, device=self.device)
+        
+        for i in range(N):
+            for j in range(N):
+                if i != j:
+                    # Distance
+                    dist = torch.norm(coordinates[i] - coordinates[j])
+                    
+                    # Direction vector
+                    direction = F.normalize(coordinates[j] - coordinates[i], dim=0)
+                    
+                    # Simple geometric features (distance + direction components)
+                    features = torch.zeros(16, device=self.device)
+                    features[0] = dist
+                    features[1:4] = direction
+                    
+                    # Distance bins (simplified)
+                    for k, threshold in enumerate([4, 8, 12, 16, 20]):
+                        features[4 + k] = (dist < threshold).float()
+                    
+                    # Sequence separation
+                    seq_sep = abs(i - j)
+                    features[9] = min(seq_sep / 10.0, 1.0)  # Normalized sequence separation
+                    
+                    edge_features[i, j] = features
+        
+        return edge_features
+    
+    def _calculate_structure_metrics(self, coordinates: torch.Tensor, 
+                                   contact_map: torch.Tensor, 
+                                   distance_predictions: torch.Tensor) -> dict:
+        """Calculate structure quality metrics"""
+        # Contact accuracy
+        predicted_contacts = contact_map > 0.5
+        
+        # Calculate actual distances
+        N = coordinates.size(0)
+        actual_distances = torch.zeros(N, N, device=self.device)
+        
+        for i in range(N):
+            for j in range(N):
+                actual_distances[i, j] = torch.norm(coordinates[i] - coordinates[j])
+        
+        actual_contacts = actual_distances < 8.0  # 8 Å contact threshold
+        
+        # Contact prediction accuracy
+        if predicted_contacts.sum() > 0:
+            contact_precision = (predicted_contacts & actual_contacts).sum().float() / predicted_contacts.sum().float()
+            contact_recall = (predicted_contacts & actual_contacts).sum().float() / actual_contacts.sum().float()
+            contact_f1 = 2 * (contact_precision * contact_recall) / (contact_precision + contact_recall)
+        else:
+            contact_precision = contact_recall = contact_f1 = 0.0
+        
+        # Distance prediction accuracy (using distance bins)
+        distance_bins = torch.linspace(2, 20, 37, device=self.device)  # Distance bins from 2-20 Å
+        
+        return {
+            'contact_precision': contact_precision.item(),
+            'contact_recall': contact_recall.item(),
+            'contact_f1': contact_f1.item(),
+            'mean_distance_error': torch.mean(torch.abs(actual_distances - 8.0)).item(),  # Simplified
+            'structure_compactness': torch.std(torch.norm(coordinates - torch.mean(coordinates, dim=0), dim=1)).item()
+        }
+
+# Example prediction
+predictor = ProteinStructurePredictor()
+
+# Example protein sequence (small protein for demonstration)
+test_sequence = "MKTAYIAKVVQLGEKGKELVGTVLKGSGPFIFKFIVFSIGCLIMIGSLVIYGAGMVYFNKRSL"
+
+print(f"Predicting structure for sequence of length {len(test_sequence)}")
+
+# Predict structure
+structure_result = predictor.predict_structure(test_sequence, num_iterations=5)
+
+print("\nStructure Prediction Results:")
+print(f"Sequence: {structure_result['sequence'][:50]}...")
+print(f"Coordinates shape: {structure_result['coordinates'].shape}")
+print(f"Contact precision: {structure_result['metrics']['contact_precision']:.3f}")
+print(f"Contact recall: {structure_result['metrics']['contact_recall']:.3f}")
+print(f"Structure compactness: {structure_result['metrics']['structure_compactness']:.2f}")
+
+print("\nSecondary structure predictions (first 20 residues):")
+ss_classes = ['H', 'B', 'E', 'G', 'I', 'T', 'S', 'L']  # 8-class SS
+ss_predictions = np.argmax(structure_result['secondary_structure'][:20], axis=1)
+ss_string = ''.join([ss_classes[pred] for pred in ss_predictions])
+print(f"Predicted SS: {ss_string}")
+
+print("\nConfidence scores (first 10 residues):")
+confidence_scores = structure_result['confidence_scores'][:10]
+print(f"Confidence: {[f'{score:.2f}' for score in confidence_scores]}")
+```
+
+### AlphaFold-inspired architectures
+
+The breakthrough achieved by AlphaFold demonstrated the power of combining evolutionary information with deep learning:
+
+```python
+class AlphaFoldInspiredModel(nn.Module):
+    """Simplified version of AlphaFold architecture focusing on key innovations"""
+    
+    def __init__(self, msa_dim=256, pair_dim=128, seq_len=256):
+        super(AlphaFoldInspiredModel, self).__init__()
+        
+        self.msa_dim = msa_dim
+        self.pair_dim = pair_dim
+        self.seq_len = seq_len
+        
+        # MSA (Multiple Sequence Alignment) processing
+        self.msa_stack = nn.ModuleList([
+            MSAAttentionBlock(msa_dim) for _ in range(4)
+        ])
+        
+        # Pair representation processing
+        self.pair_stack = nn.ModuleList([
+            PairAttentionBlock(pair_dim) for _ in range(4)
+        ])
+        
+        # Structure module (simplified)
+        self.structure_module = StructureModule(pair_dim)
+        
+    def forward(self, msa_features, pair_features):
+        """
+        Forward pass through AlphaFold-inspired architecture
+        
+        Args:
+            msa_features: [N_seq, seq_len, msa_dim] - MSA representations
+            pair_features: [seq_len, seq_len, pair_dim] - Pairwise features
+        """
+        # Process MSA
+        msa_repr = msa_features
+        for msa_block in self.msa_stack:
+            msa_repr = msa_block(msa_repr, pair_features)
+        
+        # Process pair representations
+        pair_repr = pair_features
+        for pair_block in self.pair_stack:
+            pair_repr = pair_block(pair_repr, msa_repr)
+        
+        # Structure prediction
+        structure_output = self.structure_module(pair_repr)
+        
+        return {
+            'msa_representation': msa_repr,
+            'pair_representation': pair_repr,
+            'structure_prediction': structure_output
+        }
+
+class MSAAttentionBlock(nn.Module):
+    """MSA attention block processing evolutionary information"""
+    
+    def __init__(self, msa_dim):
+        super(MSAAttentionBlock, self).__init__()
+        
+        self.msa_dim = msa_dim
+        
+        # Row-wise attention (across sequences for each position)
+        self.row_attention = nn.MultiheadAttention(msa_dim, num_heads=8)
+        
+        # Column-wise attention (across positions for each sequence)  
+        self.col_attention = nn.MultiheadAttention(msa_dim, num_heads=8)
+        
+        # Feed-forward networks
+        self.row_ffn = nn.Sequential(
+            nn.Linear(msa_dim, msa_dim * 4),
+            nn.ReLU(),
+            nn.Linear(msa_dim * 4, msa_dim)
+        )
+        
+        self.col_ffn = nn.Sequential(
+            nn.Linear(msa_dim, msa_dim * 4),
+            nn.ReLU(),
+            nn.Linear(msa_dim * 4, msa_dim)
+        )
+        
+        # Layer normalization
+        self.row_norm1 = nn.LayerNorm(msa_dim)
+        self.row_norm2 = nn.LayerNorm(msa_dim)
+        self.col_norm1 = nn.LayerNorm(msa_dim)
+        self.col_norm2 = nn.LayerNorm(msa_dim)
+    
+    def forward(self, msa_repr, pair_features):
+        """
+        Process MSA with row and column attention
+        
+        Args:
+            msa_repr: [N_seq, seq_len, msa_dim]
+            pair_features: [seq_len, seq_len, pair_dim] (for biasing)
+        """
+        N_seq, seq_len, msa_dim = msa_repr.shape
+        
+        # Row-wise attention (process each position across sequences)
+        # Reshape for attention: [seq_len, N_seq, msa_dim]
+        msa_transposed = msa_repr.transpose(0, 1)
+        
+        row_attended, _ = self.row_attention(
+            msa_transposed, msa_transposed, msa_transposed
+        )
+        
+        # Add residual and normalize
+        msa_transposed = self.row_norm1(msa_transposed + row_attended)
+        
+        # Feed-forward
+        row_ffn_out = self.row_ffn(msa_transposed)
+        msa_transposed = self.row_norm2(msa_transposed + row_ffn_out)
+        
+        # Transpose back
+        msa_repr = msa_transposed.transpose(0, 1)
+        
+        # Column-wise attention (process each sequence across positions)
+        col_attended_list = []
+        
+        for i in range(N_seq):
+            seq_repr = msa_repr[i]  # [seq_len, msa_dim]
+            
+            col_attended, _ = self.col_attention(
+                seq_repr.unsqueeze(1), seq_repr.unsqueeze(1), seq_repr.unsqueeze(1)
+            )
+            col_attended = col_attended.squeeze(1)
+            
+            # Add residual and normalize
+            seq_repr = self.col_norm1(seq_repr + col_attended)
+            
+            # Feed-forward
+            col_ffn_out = self.col_ffn(seq_repr)
+            seq_repr = self.col_norm2(seq_repr + col_ffn_out)
+            
+            col_attended_list.append(seq_repr)
+        
+        msa_repr = torch.stack(col_attended_list, dim=0)
+        
+        return msa_repr
+
+class PairAttentionBlock(nn.Module):
+    """Pair attention block for processing pairwise residue relationships"""
+    
+    def __init__(self, pair_dim):
+        super(PairAttentionBlock, self).__init__()
+        
+        self.pair_dim = pair_dim
+        
+        # Triangle multiplicative updates
+        self.triangle_mult_outgoing = TriangleMultiplication('outgoing')
+        self.triangle_mult_incoming = TriangleMultiplication('incoming')
+        
+        # Triangle self-attention
+        self.triangle_attention_start = TriangleAttention('start')
+        self.triangle_attention_end = TriangleAttention('end')
+        
+        # Pair-wise feed-forward
+        self.pair_ffn = nn.Sequential(
+            nn.Linear(pair_dim, pair_dim * 4),
+            nn.ReLU(),
+            nn.Linear(pair_dim * 4, pair_dim)
+        )
+        
+        # Normalization layers
+        self.norm_layers = nn.ModuleList([
+            nn.LayerNorm(pair_dim) for _ in range(5)
+        ])
+    
+    def forward(self, pair_repr, msa_repr):
+        """
+        Process pair representations with triangle attention
+        
+        Args:
+            pair_repr: [seq_len, seq_len, pair_dim]
+            msa_repr: [N_seq, seq_len, msa_dim] (for updates)
+        """
+        # Triangle multiplicative updates
+        pair_repr = self.norm_layers[0](pair_repr + self.triangle_mult_outgoing(pair_repr))
+        pair_repr = self.norm_layers[1](pair_repr + self.triangle_mult_incoming(pair_repr))
+        
+        # Triangle attention
+        pair_repr = self.norm_layers[2](pair_repr + self.triangle_attention_start(pair_repr))
+        pair_repr = self.norm_layers[3](pair_repr + self.triangle_attention_end(pair_repr))
+        
+        # Feed-forward
+        pair_repr = self.norm_layers[4](pair_repr + self.pair_ffn(pair_repr))
+        
+        return pair_repr
+
+class TriangleMultiplication(nn.Module):
+    """Triangle multiplicative update for pair representations"""
+    
+    def __init__(self, direction):
+        super(TriangleMultiplication, self).__init__()
+        self.direction = direction
+        # Simplified implementation
+        
+    def forward(self, pair_repr):
+        # Placeholder for triangle multiplication
+        return torch.zeros_like(pair_repr)
+
+class TriangleAttention(nn.Module):
+    """Triangle attention mechanism"""
+    
+    def __init__(self, orientation):
+        super(TriangleAttention, self).__init__()
+        self.orientation = orientation
+        # Simplified implementation
+        
+    def forward(self, pair_repr):
+        # Placeholder for triangle attention
+        return torch.zeros_like(pair_repr)
+
+class StructureModule(nn.Module):
+    """Structure module for converting representations to 3D coordinates"""
+    
+    def __init__(self, pair_dim):
+        super(StructureModule, self).__init__()
+        
+        self.pair_dim = pair_dim
+        
+        # Backbone frame prediction
+        self.backbone_net = nn.Linear(pair_dim, 12)  # Rotation + translation
+        
+        # Side chain prediction
+        self.side_chain_net = nn.Linear(pair_dim, 14)  # Chi angles + coordinates
+        
+    def forward(self, pair_repr):
+        """
+        Convert pair representation to 3D structure
+        
+        Args:
+            pair_repr: [seq_len, seq_len, pair_dim]
+        """
+        seq_len = pair_repr.size(0)
+        
+        # Extract diagonal elements for per-residue predictions
+        residue_features = torch.diagonal(pair_repr, dim1=0, dim2=1).transpose(0, 1)
+        
+        # Predict backbone frames
+        backbone_params = self.backbone_net(residue_features)
+        
+        # Predict side chain conformations
+        side_chain_params = self.side_chain_net(residue_features)
+        
+        # Convert to coordinates (simplified)
+        coordinates = self._params_to_coordinates(backbone_params, side_chain_params)
+        
+        return {
+            'coordinates': coordinates,
+            'backbone_frames': backbone_params,
+            'side_chain_angles': side_chain_params
+        }
+    
+    def _params_to_coordinates(self, backbone_params, side_chain_params):
+        """Convert predicted parameters to 3D coordinates"""
+        seq_len = backbone_params.size(0)
+        
+        # Simplified coordinate generation
+        # In practice, this would use proper protein geometry
+        coordinates = torch.cumsum(backbone_params[:, :3], dim=0)  # Simplified
+        
+        return coordinates
+```
+
+## Multiple sequence alignment and evolutionary information
+
+### MSA generation and processing
+
+Evolutionary information from related sequences provides crucial constraints for structure prediction:
+
+```python
+import subprocess
+import tempfile
+import os
+from Bio import SeqIO, AlignIO
+from Bio.Seq import Seq
+from Bio.SeqRecord import SeqRecord
+import numpy as np
+
+class MSAProcessor:
+    """Process multiple sequence alignments for structure prediction"""
+    
+    def __init__(self):
+        self.msa_databases = {
+            'uniref90': '/path/to/uniref90',
+            'mgnify': '/path/to/mgnify',  
+            'bfd': '/path/to/bfd'
+        }
+    
+    def generate_msa(self, query_sequence: str, max_sequences=1000) -> dict:
+        """Generate MSA using sequence search tools"""
+        
+        # In practice, would use HHblits, MMseqs2, or similar tools
+        # Here we simulate the process
+        
+        msa_sequences = self._simulate_homologous_sequences(query_sequence, max_sequences)
+        
+        # Align sequences (would use MUSCLE, Clustal, or similar)
+        aligned_sequences = self._align_sequences(msa_sequences)
+        
+        # Calculate sequence weights and statistics
+        msa_stats = self._calculate_msa_statistics(aligned_sequences)
+        
+        return {
+            'aligned_sequences': aligned_sequences,
+            'statistics': msa_stats,
+            'coverage': self._calculate_coverage(aligned_sequences, query_sequence),
+            'diversity': self._calculate_diversity(aligned_sequences)
+        }
+    
+    def _simulate_homologous_sequences(self, query_sequence: str, max_sequences: int) -> list:
+        """Simulate finding homologous sequences (for demonstration)"""
+        sequences = [query_sequence]  # Include query sequence
+        
+        # Simulate mutations to create homologs
+        mutation_rates = [0.1, 0.2, 0.3, 0.4, 0.5]  # Different evolutionary distances
+        
+        for rate in mutation_rates:
+            for _ in range(min(max_sequences // len(mutation_rates), 200)):
+                mutated_seq = self._mutate_sequence(query_sequence, rate)
+                sequences.append(mutated_seq)
+                
+                if len(sequences) >= max_sequences:
+                    break
+        
+        return sequences[:max_sequences]
+    
+    def _mutate_sequence(self, sequence: str, mutation_rate: float) -> str:
+        """Simulate sequence evolution through mutations"""
+        amino_acids = 'ACDEFGHIKLMNPQRSTVWY'
+        mutated = list(sequence)
+        
+        for i in range(len(mutated)):
+            if np.random.random() < mutation_rate:
+                # Random mutation
+                mutated[i] = np.random.choice(amino_acids)
+        
+        return ''.join(mutated)
+    
+    def _align_sequences(self, sequences: list) -> list:
+        """Align sequences (simplified implementation)"""
+        # In practice, would use proper multiple sequence alignment tools
+        # Here we assume sequences are already aligned (same length)
+        
+        max_len = max(len(seq) for seq in sequences)
+        aligned = []
+        
+        for seq in sequences:
+            if len(seq) < max_len:
+                # Pad with gaps
+                seq += '-' * (max_len - len(seq))
+            aligned.append(seq)
+        
+        return aligned
+    
+    def _calculate_msa_statistics(self, aligned_sequences: list) -> dict:
+        """Calculate MSA quality statistics"""
+        if not aligned_sequences:
+            return {}
+        
+        seq_len = len(aligned_sequences[0])
+        num_sequences = len(aligned_sequences)
+        
+        # Position-wise conservation
+        conservation_scores = []
+        for pos in range(seq_len):
+            residues = [seq[pos] for seq in aligned_sequences if seq[pos] != '-']
+            if residues:
+                # Calculate entropy as conservation measure
+                residue_counts = {}
+                for res in residues:
+                    residue_counts[res] = residue_counts.get(res, 0) + 1
+                
+                total = len(residues)
+                entropy = 0
+                for count in residue_counts.values():
+                    p = count / total
+                    entropy -= p * np.log2(p) if p > 0 else 0
+                
+                conservation_scores.append(entropy)
+            else:
+                conservation_scores.append(0)
+        
+        # Gap statistics
+        gap_frequencies = []
+        for pos in range(seq_len):
+            gaps = sum(1 for seq in aligned_sequences if seq[pos] == '-')
+            gap_frequencies.append(gaps / num_sequences)
+        
+        return {
+            'num_sequences': num_sequences,
+            'alignment_length': seq_len,
+            'average_conservation': np.mean(conservation_scores),
+            'conservation_scores': conservation_scores,
+            'gap_frequencies': gap_frequencies,
+            'effective_sequences': self._calculate_effective_sequences(aligned_sequences)
+        }
+    
+    def _calculate_effective_sequences(self, aligned_sequences: list, threshold=0.8) -> float:
+        """Calculate effective number of sequences (accounting for redundancy)"""
+        # Simplified Neff calculation
+        num_sequences = len(aligned_sequences)
+        
+        # Calculate pairwise similarities
+        similarities = []
+        for i in range(num_sequences):
+            for j in range(i + 1, num_sequences):
+                similarity = self._sequence_similarity(aligned_sequences[i], aligned_sequences[j])
+                similarities.append(similarity)
+        
+        # Count sequences below similarity threshold
+        if not similarities:
+            return float(num_sequences)
+        
+        # Simplified effective sequence calculation
+        avg_similarity = np.mean(similarities)
+        effective_sequences = num_sequences * (1 - avg_similarity + 0.1)
+        
+        return max(1.0, effective_sequences)
+    
+    def _sequence_similarity(self, seq1: str, seq2: str) -> float:
+        """Calculate sequence similarity"""
+        if len(seq1) != len(seq2):
+            return 0.0
+        
+        matches = sum(1 for a, b in zip(seq1, seq2) if a == b and a != '-')
+        valid_positions = sum(1 for a, b in zip(seq1, seq2) if a != '-' and b != '-')
+        
+        return matches / valid_positions if valid_positions > 0 else 0.0
+    
+    def _calculate_coverage(self, aligned_sequences: list, query_sequence: str) -> dict:
+        """Calculate MSA coverage statistics"""
+        if not aligned_sequences:
+            return {}
+        
+        query_aligned = aligned_sequences[0]  # Assume first sequence is query
+        
+        # Calculate coverage per position
+        position_coverage = []
+        for pos in range(len(query_aligned)):
+            non_gap_seqs = sum(1 for seq in aligned_sequences if seq[pos] != '-')
+            coverage = non_gap_seqs / len(aligned_sequences)
+            position_coverage.append(coverage)
+        
+        return {
+            'position_coverage': position_coverage,
+            'average_coverage': np.mean(position_coverage),
+            'low_coverage_positions': [i for i, cov in enumerate(position_coverage) if cov < 0.3]
+        }
+    
+    def _calculate_diversity(self, aligned_sequences: list) -> dict:
+        """Calculate sequence diversity in MSA"""
+        if len(aligned_sequences) < 2:
+            return {'diversity_score': 0.0}
+        
+        # Calculate pairwise distances
+        distances = []
+        for i in range(len(aligned_sequences)):
+            for j in range(i + 1, len(aligned_sequences)):
+                distance = 1 - self._sequence_similarity(aligned_sequences[i], aligned_sequences[j])
+                distances.append(distance)
+        
+        return {
+            'diversity_score': np.mean(distances),
+            'diversity_std': np.std(distances),
+            'max_distance': np.max(distances),
+            'min_distance': np.min(distances)
+        }
+
+# Coevolution analysis for contact prediction
+class CoevolutionAnalyzer:
+    """Analyze coevolution patterns in MSAs for contact prediction"""
+    
+    def __init__(self):
+        self.methods = ['mi', 'dca', 'plmc']  # Mutual information, DCA, pseudolikelihood
+    
+    def analyze_coevolution(self, aligned_sequences: list, method='dca') -> dict:
+        """Analyze coevolution patterns in MSA"""
+        
+        if method == 'mi':
+            return self._mutual_information_analysis(aligned_sequences)
+        elif method == 'dca':
+            return self._direct_coupling_analysis(aligned_sequences)
+        elif method == 'plmc':
+            return self._pseudolikelihood_analysis(aligned_sequences)
+        else:
+            raise ValueError(f"Unknown coevolution method: {method}")
+    
+    def _mutual_information_analysis(self, aligned_sequences: list) -> dict:
+        """Calculate mutual information between sequence positions"""
+        seq_len = len(aligned_sequences[0])
+        num_sequences = len(aligned_sequences)
+        
+        # Calculate amino acid frequencies at each position
+        position_frequencies = []
+        for pos in range(seq_len):
+            residues = [seq[pos] for seq in aligned_sequences if seq[pos] != '-']
+            freq_dict = {}
+            for res in residues:
+                freq_dict[res] = freq_dict.get(res, 0) + 1
+            
+            # Normalize to probabilities
+            total = len(residues)
+            for res in freq_dict:
+                freq_dict[res] /= total
+            
+            position_frequencies.append(freq_dict)
+        
+        # Calculate pairwise mutual information
+        mi_matrix = np.zeros((seq_len, seq_len))
+        
+        for i in range(seq_len):
+            for j in range(i + 1, seq_len):
+                mi = self._calculate_mutual_information(
+                    aligned_sequences, i, j, position_frequencies[i], position_frequencies[j]
+                )
+                mi_matrix[i, j] = mi_matrix[j, i] = mi
+        
+        # Apply Average Product Correction (APC) to remove phylogenetic bias
+        apc_matrix = self._apply_apc_correction(mi_matrix)
+        
+        return {
+            'mi_matrix': mi_matrix,
+            'apc_corrected': apc_matrix,
+            'top_pairs': self._get_top_coevolving_pairs(apc_matrix, top_k=100)
+        }
+    
+    def _calculate_mutual_information(self, sequences: list, pos_i: int, pos_j: int,
+                                    freq_i: dict, freq_j: dict) -> float:
+        """Calculate mutual information between two positions"""
+        # Joint frequency distribution
+        joint_freq = {}
+        valid_pairs = []
+        
+        for seq in sequences:
+            if seq[pos_i] != '-' and seq[pos_j] != '-':
+                pair = (seq[pos_i], seq[pos_j])
+                joint_freq[pair] = joint_freq.get(pair, 0) + 1
+                valid_pairs.append(pair)
+        
+        if len(valid_pairs) == 0:
+            return 0.0
+        
+        # Normalize joint frequencies
+        total = len(valid_pairs)
+        for pair in joint_freq:
+            joint_freq[pair] /= total
+        
+        # Calculate mutual information
+        mi = 0.0
+        for pair, joint_prob in joint_freq.items():
+            res_i, res_j = pair
+            prob_i = freq_i.get(res_i, 0)
+            prob_j = freq_j.get(res_j, 0)
+            
+            if joint_prob > 0 and prob_i > 0 and prob_j > 0:
+                mi += joint_prob * np.log2(joint_prob / (prob_i * prob_j))
+        
+        return mi
+    
+    def _apply_apc_correction(self, mi_matrix: np.ndarray) -> np.ndarray:
+        """Apply Average Product Correction to remove background correlation"""
+        seq_len = mi_matrix.shape[0]
+        apc_matrix = np.copy(mi_matrix)
+        
+        # Calculate row and column averages
+        row_means = np.mean(mi_matrix, axis=1)
+        col_means = np.mean(mi_matrix, axis=0)
+        total_mean = np.mean(mi_matrix)
+        
+        # Apply APC correction
+        for i in range(seq_len):
+            for j in range(seq_len):
+                if i != j:
+                    apc_correction = (row_means[i] * col_means[j]) / total_mean
+                    apc_matrix[i, j] -= apc_correction
+        
+        return apc_matrix
+    
+    def _direct_coupling_analysis(self, aligned_sequences: list) -> dict:
+        """Perform Direct Coupling Analysis (DCA) - simplified version"""
+        # This is a simplified placeholder - real DCA involves solving inverse Ising model
+        mi_result = self._mutual_information_analysis(aligned_sequences)
+        
+        # Apply additional correction for indirect correlations (simplified)
+        dca_matrix = mi_result['apc_corrected']
+        
+        # Additional processing would go here in real implementation
+        
+        return {
+            'dca_matrix': dca_matrix,
+            'top_pairs': self._get_top_coevolving_pairs(dca_matrix, top_k=100)
+        }
+    
+    def _pseudolikelihood_analysis(self, aligned_sequences: list) -> dict:
+        """Pseudolikelihood maximization for coevolution analysis"""
+        # Simplified implementation - real PLMC involves complex optimization
+        return self._direct_coupling_analysis(aligned_sequences)
+    
+    def _get_top_coevolving_pairs(self, matrix: np.ndarray, top_k=100) -> list:
+        """Get top coevolving residue pairs"""
+        seq_len = matrix.shape[0]
+        pairs = []
+        
+        for i in range(seq_len):
+            for j in range(i + 1, seq_len):
+                pairs.append((i, j, matrix[i, j]))
+        
+        # Sort by coevolution score
+        pairs.sort(key=lambda x: x[2], reverse=True)
+        
+        return pairs[:top_k]
+
+# Example usage
+msa_processor = MSAProcessor()
+coevolution_analyzer = CoevolutionAnalyzer()
+
+# Example sequence
+test_sequence = "MKLLPHSSAPLLDVDYGQLIKSLEELRGIGFTVKEQELIIYPFPGVIIGGKIYRSHEQVDGTYHGKDVTVSAAFEPGPVDLAEEGTKDAIRRSKFAQLSEQGAYEKLKLRFDRKYNYKEIAFLPMQSSIIPWVYGSSLGRPGRQLYTCNKLRPVIVHNRRQIEALYDSFTSGVDIQEPVSSIVPIIHAPILAPRFGVDQSQYILNHQFEVLTGKLPPKIESEHLEEGGVRAEEEGGNVQPEEDMKIFVMLQRYQGVLGVDTVPYVLPTRKSLQGEECQKSLTKIGTVQKNKVNQKDTGLLTEKILQDPHRISLGQQGPNVEHYHAFQTSGHLAFDQVVCGLHRFLTKELNIYLHQIPRYNLLHGNFYILPDGHKIIIAPVNGQGNIVCEYIVRDLYRLISQHGAAPKTAPIYSRLLGVGNEPQHQEIAISAIISVYFQQGVEVQTLTMDVCRQAFLQGLGKDSAEGSRVLTKKVSGYACIITQGQLKPIIEGFCAVNSQKTIDRILLSLLKRRKRLGQYAIIFADRTLMNSGRRIVDLAEEAHHEPSIDRQMVKSIQTVLARALYGTYIKQPFIAEHVKQNLFYSGRVQEKFMPPPFGKPAAIPSGFKTVLQMSVVCVIYHTDILRSQAVDDVSLLQSHSALQVTIMGPVPVKTTYGQMIKEQVQSPTITMDVTKLGGNLVTYRILKNRLLACADRDYRVAQMVCSQVFNDLLHKYNQYTVTDIAAEGIDHKKIARKFLEQMSSIIDKEGRHSILLISDDFTPQVDATVTLKVGKVSIDTLNEIKLLLMDVQITDGCQEAEVSLKRLDLNPDAIHRVGAALNQSYFSFVNRGVGAKAQARELGFTYSLKFSHKAYEDDFVEQYKPVVIYFEMTPIGRYQVTARYLAAVCALRGILQGDIDRQGSKLLYKFRFKDPAGVTAIHELLRRVPGGRGKRKFIVPGQVEALFKTCGLQEAENLHPQDKKYEEIPGRMLSPQFTSEIRRREEILEVSKSGAAPRCDDIKLLGGSQCWGPVTSVQVNKTQAKLLNHGMQRNDGSIDNPPFVTVFQRLEPEHDEGNYAAFVRRIIGGIGSKQSIIAAVLKDLLQIAKVAIPFVVIVFHSKKDSRGLQLYVIFSTGNEIQRQGETVFRILYELVNAEVTDAGPSLVRYSPAIMNLAVPTRFIIHHLGDLKRSYFVTNKLGLNVICVGGTLVTPGFSLLDIHNVIITGCKNILAGIVHTQGLDPASDIPGCAVGAEKGFYFAYDIDTKAAVALYTILKVFFAQKLGNNSTIQDLNTDLSSSQRLLGDYFGDLSEVLNQFFLTDPMKDILVSYLNTLLHSHDKRSLILGGIEEAFDIDGFQIQLTEAKVTILRDSAYHEFIAKDVYGNSDVMSNRLVNFKTAEHSIISQFYNEEESAEKKKTKTQQTRTAKDEIEKAAKEEAAARKRLEEEERTAAFQFSVFKDDVEVIKEVSEVAESLKVEKQELSQEQCGAAKQKDILHALLKAASDIAKNGVERLVDVLLRHIGQMMLEHFIYAAIDQLDEAVSLRKLKTLKPEEIVECFGDLYDYILGVFCAPGILRGEGCKVILAGVVAPKCGEGTDSTDRVFEPELQTQIVFVQTIVDQKSRYKAAHSLKHLVTDPVQNFGTLVLLKKKKLVRKIKVVTPKLSMDLLRNPDLTKDTQTMIQKILVGFLSGAYVAESLSALRRILTLPLNYQVRKDLNLCGQINSPGLPTLPVLHHVLYVISWSGAPLLGLHISGVVLPASQVMKLLVTTIVNAAIEVIGIHVPYALTELVKQGGYIELTNIGSSLQLLTVLAYGDSTLNIVGLKVALLKGYTGLVVMKDDTPQVLQSRCLLSQAADLSVFLQGEPKKELYGLQKDVGYLGYLNPLRLRMLIGLRQVDVTLKHGRVGAAEVTGLVKFLRIIIFRDILNISVYKWFKQYLEEFLALVSRLRVEVGTAYRFRRQLIPGKRILLFVQPRVIAPMVRGGHQAILLLNPLTIVPLGTNLAYIDLLKQTIMRDLMEAVLKARIVGLQGVIGARLRRVHLQPQMHVHIFSEYIIGCLPLGVVHNSTTDVMQHQHGKKILKLIVAEQIPIGSRRIISMAGSMIPMGHLVMYALDNKEKQFSFPQFNELVNTHMMLGDACVTKVIAGILMRHTKPSGILGPIIIQTQKGIVKGLLQVVLRFGDHDIPEILNQLYSILSGRYKVFSLLSAVCLVTNGLKIVSEHLLKDVGLLSHSLVDFIISGQDLQGKNFDDVELYPLVNLQSPPFMEKQLGKLLVGKKRLVPIIGTQGDNFAANPYMTLIKGGLHQFRLPMLQMPGLSTGVHGVSILAKLPRLQRNDAVNYMLQVQIAERVIQPEFLLDSFAMFYLHQPGPSRYGKISFSTKLIGFRGLYQGTPAAIKSIILQELGVHNALLRFVQGKCLLLHVAGLFYQLLIPHLEILQQPRQILSLLLKKRSRFLKRCNVNYTPEVLEEANLGEAFQAQKTDNGHLNSEVLAEFHDYVHSFDNVLDLHLDISQMVRLRQRGTLHRVLDLFRVQFNRLKAFQDHVLLAVHQLQRKLIRMLKWVDGSKVVGQANPIITVVGVEQIAEVMVPTQSMAEQFGFVRSLGMGQGDQAFMEAKMGTVGFFIPDAELFYLLATQSNDLEQEIALSRDKAKQSIQGEYQGFMEYHQQHLLEAGRQVEVLADPSAGVLTQVYTAGGLLGPGWDRLGQAASYTRRLLVEKDFVQGRSQYGLPGVFAELVLAQKGFDDMEQIASLSLSDFADLNSAAMLRKLLMAFGAKFGDLRNQIQQGQKPVTSQGSLQHAPMAKQYGQLYGHLVGADLYSGQNGHLKTPNSALVSQGDQSLDYQLITRIQQFSQPSYDGDMPEKLEKFGTLHSFSAVDDLSAALRRQVQVDRQAEQVQVGEEIQQTLARQKGDFASQQDADNMAVGEEQIQQIQDAETLIAKGGSELASQVVQEKDAKQQQQLQGALASSQSEMRVQQSQLQQDQSELEKGILADGQRSIIVGQERQQQKIVKQIIQDMIEAYQEEKVFMVQTFIHYAGSEEQGLLTARLTQQVQEAGLVKGQRRGLVQGQDTTEEIKKAREELEKIEHVKQGDSEIQQQGSLQLVIEQLKADTTTEEVSKIIEQLNDVRQTLNQGQELAQVEKGLVGALQQQKQDVRKAQLTTRNAEQQLSQVQQIGQTTQQDIVKIDQAQNNVASALAGKQELEKAKDALVAQQKAIAEEQQATIDLLQQVRQAASEQDQAIRVAKKEQTQLEELQTVNELVKALASDKQIAQDQKIATQQQVIQELASTKQELLSLRDSMQSATQNNKGLVTQKETVGLLAQTAELGKLVKAAEQLNEAEVQTKKDMQAISEQEALEQALSKQSEEEAVQKDAATLDQMGQVIKKQTQGFVVEEEQNLGFKHQVLHEKDQNQQQIGLLQKVEQGTQEVISQKIELARASDSARKQEEATAEIDALEEQRGQLTSDIARLNKEIERRQKSAESLQKKSELLGQLQAAESLRTEAHKLSSLGQAETRVSEAKLQTEKKTLSAAVNQGKKQSEDIKQDLEIQRAAEQEAETLSQIQDQAESSREALQKQAERTQQQIKELEQSQQQKELRTTQEAIRTDQALLNAVEQEREKLRQQDDNKITAQSQVLTKALQGKKRDTQQQGSILEDMKQEQASQQQQQHLLSGIIREKEAIQSQIELLMDLIQTVNKTEQQLKKLCQELGQDARLAKSQQNSTRKLLSAEQAQVLDMRQIAQDQKSLQKQIESLAAQAAELRSAEQQVLQMREQAKEKLNKETQQLKHALSDIAQTLSIDRNLKDQKQILQDQEEARVQLKEAEERALQLDSNHALLRAVQDAKTAMQQDRSLLKEQDQLSNIVAENAEIRAKQEQLGQAHTELLKISAESSQKQVDQTKQQLGELEKRLQTLNKSRKDLEKGMKQVEATRTDLGQQSREIAAGVEDIIQQKIQSLEKLIASEQKGDEMSQGNQLAHQAISTLNKAKMGLVQQKQEAIRALKETLQELQKQVVSLSRQNEKSAEQLNSIVVEMRKRQQLLNAEQTEGQAAKQVETQVDQKLTKLEGQMAQKLQEAEKQNRSLEAQLKQLKQEREKVKVELEKASKLSKQMTTLGAMQAVLKQQQELAAQLELKQVQEQLKAIQAVNRQRQGLVQQLQVDLKLVSALASHEQKESQIQKLMKEQVNVNDQSKEKVAKQRNGQHGQLLREQQGLKDAIEAIESLSEKVLAAGSSLETLKALLGQARVVNDKVLEVQQAQQKLSKLLKSIEEAGDMLSTKQSILQAKELIRQSKDRQKAKLALQHEQELEDVIKQRKAKAEGTQQKQQQILNEIADAQQMLQQLTKQRAQIAAAAKELKQQAAIRSELSQLHDVPKQAGTLVDNEQRLQNLQVLIQQAIITAIQVANDQKQRLNEVARQLTANQQLLKASAQQKEKQQQLIDQIQALQQVFESQTKTLQARAQAAEEQQTKERATQILQLLVKAVQLHIEQLLHDQDQLQQLIEATLQTQMSELQNELKQLQVQAESARTILQAVHTLSENLRIQETALQEKLLNKLQDQAKALELQQELLKQAMQTMSSIKAEKRQKKTSQVADGVKKVLQRQQQNLEQILLGSGTLETLQKQHTDIQANTVITQTKLVQAAQELAQMEAERQTQQQQAQEALLLAQQKLQEAQEIKQKIASRVQSLQEEQIRLQEQGTQAKELEAALQRAQIAVSTLQKKLQGQAVDISQQKLQILQALTEQLLRDEQLIAKEKAASRLQQVEVAARNMIKLQEQATQLQAKQLAADAQQQRKELEQALQGSGELASRLEEIKQLSASQIQLQQKLQKLKEVADEKQAKANKQELLKKIEEAKDQRSAAHKKQLLQEIQIVKQQKHSSLQEQVEVQEELQEAKNHLDRLQQKNQQESSLSLQQTVQQNNQRIAKAEEKLSEALQQKIAEIQEAVSLQKTRMTLNEGAQKLQTIQRQVSRSKQRLEGTQQAIQRLRGVLQQQAQIMQDANQQVSQLQTIKHIIHEAEKLKIEQKIVSAEAAREAKVQVQALEQQQREAASLLETLEAKQQQKEKKAAEQRGEKMSLVLEKQEQLQRAISQQQQLLELTTQKLMQNIDKQSNLLEAEQQKLQRVEDLDGVVQQKQQQIDNIIIELQKKEIELQEVQRSKSGLQQKLRALEKLNVELEDTAATEQNLMQIQITRKQEDQQLLREALDQLNQSLNAAIESQAEQIRKALEQKQTLMQQRDSANKILNMVQDLLDQVQLLMQQHSQAHAQLLKGTQKDQAKLLEEAKMQQHQKDLEQALEAASAAQREIENQIQRQRQKLQALQDQLKQLQEIVNQLTQQEKSLQNLEEAALTVAQRQAKEQAQQKQRSAGERLQEQLKVLQTLQHQAEQLSALHEQIEKLQKLQKEIQQLRQELKQLIEEAKVNLKKTRSQAQQALEELLQGADSLLETAERLKQQAAQKQTQAEEQRKQLQQQADLQNEAAELQRTIQKLQVAIKQVQNLLAEIQELLRQVDDQIKELQARQQSQLQRAEAAAKEAEALIKQLSRLTELLQRAKGLQEDLQEAEEKMKNLQTEGSQLQAEVTSLQEQAQELVQALNRLRASQADLEELLKELTQAGSQLQQARQELQTQIALLLQSTKRLQEQQQALAKILQEEQIAQQKQAAMEAELLQKQAQAAQAKANLRALRQELQELQEQNKLLAGTAQQQVELEAQRQDLQQAARILLELQSKLQELDALVKQAADQAKSIRQELQKLQQLAEQKKQYEQLAEALSSLSQLATDIEQNIRHSQKRIEAIQKQMDDLQALQQKLKMAQTLLEEAEDQKTLLKELKQILQEKDQQQKLLDQIQKQQQRIASQEKTLQQQIEALQRAQQEKRQAIKQDNQLLQAKLKALSQVQMQRIQQQSKMQKQTADIQTQAKLRQAAGELQNIEEAIHELQAKASSAREELQQIQKALQQALKLQKQQQEAIERRQQILQSQISQLQEAQLQLQRQLEALHAQLAAQKQQKDQLVQIDQKVDQLEARLKARQQQLLSEAEVSKLQGKKLEQTQQGTQAKVDELQIKQQELEQLNKEASQLKVAVELEKQVASLQNVNKQIRERKIQAEQLQQQIQQIAEQAKQLQKQAQKLGAMQAQIAKLQEQQEKLLSETEQLQARLTEAEQRLQVVTEAAKQRKALEAAIREASLLSSAESQIRKAQQLLLQSQSEQKKLAQLILQAVEELQQIRQVSQQIQELQAQRQGTNQKQKAIEDALTQLQQLQEQLESTKQQQQAEQKLLALQMQAEKQAQQALLQTRKVAQDAQQQLQELLKKAEQLQEQLLEAQAALALLRARQAQQQKQIAQARAQAQSSQQQLQGELDLQSALKEQLTQLRQELQSQTGDLRDAIEEQGEGQQRILLQTMKKLNQTLSRKESLEAAVQQNSRLLISAQQALDELQLVRQALRQLEQANKQLLVSIAMGVQVQESQLQRLQVQSAARAKQQLLAQLQTASELLQERQQTLSAAIQAAQVLLSGAEKRAKGLGLQLEARLQQLQGTQEKLQEALLQQQVFLEDARQRLAELQELRDKALEELEQKQIQLESALENLETALNQLKQLQLEARNLEEALQRQQDLATQTAATLQVQREALEKQKKLLEDAALLVAEMQKIATAAKQARAQLAAGQDRQMQLQKAELQRAKQAGQKQTQQKQQLLEALESLQRLQEKEQQLAQSVSSLQKLEHKLAALAAEAVQQRNQELQGLVIQALKRLDSQRELLSAIEKAKQKQSLRQKQEQLQTQIQQLQQAVEALSAQRRRLQQAIQKLQEAEVQRVQTVAHELQARIKLQSLEQELKEAQAALTNLNKALEEAALQRQALEQKLQQAVEQAKQLDSQLQAQRKLLEAVQRLQAEKQELLNQVAALKAQLDRLQSQRKMLREAVQQLNASEKRLEQKQQSLQAIQALNSQLQALQRQSKELESALEQLQELQGQRKQLQLKLQEQASANQIAEALQQIAEARLQRVKAEIDQAKLQGQAQLLHQADLQAQVLQGQKKAQQNLGQAIQKLLEAERSQKTLNRKLEAEAERLQQVRQLNHQAELLLSQTQQSKQRLAAALEVEQAKQSSILLQVSQQRIKDAQKIIQQQQALDRILQRQSRLEAALQSLSQSLAAQQSLLRQLTEILESLQHKAIGLQRGQAQLQSQSELLNRLSAALEELESQKQQLSALAQQIQSLKQAIQSLHQALQETLVEQAQRQHAAQGRLQEAIQSLKQAQALVNQARSQLQKQALGLRSLQTQLQVMAQSLQEQLQKQALLARSSLEQALQSILQRQQVLKAARKELVQVNHQLKQALDSLQHALEQIKSTQRALAALLQIQQRQSSVVSRLEQAQQRLEAAEARLQSLQAALAEAQLLQSIQHQKKQVQLEQLLRSQQQLQELQKQKSYLQASQQQLQEQTSKLLQAALQVQQELLQLEKALQKQVEGLEQSLQQQQQLNQSLHELEQSLQLALRLQSELAQLRQRQMQLGSQEEQSKAIAQDLKQQISQLEAYQSQIQQQQEISQALKLQKQMQKLQQQAQQLAAALQNHQQLGASLHQLGQGLGLQQQLSQGLKQRQTQLGQQKSALEQLNHGLQKLQQSLHQLQQQIQQAEKGLSQQLQQMEQQAKLAERAREREQLAIQMQQSQQLQQQLAARLQQQSSLEGGLQSALQSLQSQLAAQSRQVLELAAEVKSQQQRLQLVEKQLSELQRQQQILEALQESLQKDAQALAARIHALAQQDQVQAERQQLLEAMKMQKQAERSLQATLETLQQRQQLKLQAKELLLAKELSQAQQHLQQAKARLDQLQVALKKQQQALEARRKQIQEQLQELQQAQQSLKQQQQLQSQQALQEAAQRLHSSLQQLGQLLGELQREKEQLAHLQERLASLNQLLQSLRQQLKVAERRLQQAAQQLKEAIRKAQSLQAEAATLTSQQKQAQLLLSQQAQAKAEKALMAEQAKQARALQQHIQELEQKAAALQEAAKMQQGQNELLQQALLKQHQNLQAQQIAVEAAAVQEQAEELQRIKAAAEQLNHSLQQLQELAQAQQRLGRQHLEALARQLRQQAAGLERRAIQRLQSEAQAAKELRTQEQAIQSAKESLKQHAARLQSKAAALSEAAADLAQAQAQLQRQVSQLQQQVLSEAAIALQRAQKALEKAQARASARQRAAALLQGQAAEIQKALQQLQAGQKQSQELLQAAQQHGELLQAQLEQGQQALKQLRTQIARLLQARVAEILQQQQQLRIQAAADLQGQAAAMASALARRLQSAALRAQQGKLAHLQIALEHAARELQAARLHQQAKALQRARKARERLLSARQEQQQLLQEAVIQLQQAQKQHAALQQAHGALQAQSGQLQQLHAQLHALQAARLQLQHIQEQKTQLKSLLSQIQNLLQEALQRLVAQLQQQAQALLQAARKEKEAILVSRLQERQASLQREAALAQQQQQLQEKLSLLESELQLQQAAIRSQIEQARGQQVAQAQWMQSLLQKQIKQQKQQYQQGQKLVNQTLTQRQLTQRIQEKLEQSLQKDSQMLQIQQRQLQALQQQQILQSKQESLQALQSALQAQQTVIQGLLQRLQQIQQGQELLQQASQQSQQLQELRQQAAQIALELLKAQEARLAAIARELQQQLIRLQQAYIAQIEQEARTLKASRKQVAQEQAQIKSLQRQNKQLQQQAEQAQKSQSQLQSIISQMQRQGQQVLQAKKAELQELIALLQNQLRSQQQYLQRLAQQHQALQQQEQQAASSLQQSQKSLQSRLAALQDQQRALQQAAIQLQASLQALQRQALEKELKATLKAIAKQIERAEQLLQALQETQAALLEKLKQQAAQTLGELGQESARLQRLALQAERALQALRQQQERALSELEQGRLQAQVQLATRSQLQALLKQLQEQQAALRALQSQMRQAVELIASQQRQLLAQGLAHLQAAIAEQAQQLQLLKAQLKELQQALARQISQLAAILRQLSAILASLKRELRLQQAALGQLLQSRQKLLQEKAQRLQAIQELLQAQLQLELELLSRLEQQALVLQARALQLQQQAISQLQRLQSQLQALQQALLQRQRQLQAILARLQTLQGSLQQQESLQARLRLLAELLQRLQKQVQESVQRAIKALEQAQAQLHQLSQAQQHQRQLQAQLAQLQQAEQLAQKLQALEQTLSAAKELKNAQKQLLAQQALLERQHELQSQILQLHLELAQLARQLQQQQRLQALLKAAQSLQRSISLQALQQQAASQLETLQLILERLNAAAGQSRILQSRRRQLLAQLQELAELATQQLKARERQLQQQEAALLQAIRAELQLCQQKQGVQAQLHAAAQLLQIQSLLEQRARRIATSAAQQGKLVEQSRQNLKALQSLQRAAEVLAAKAAALLQMLSAAQSTLAQAQQSLKLAEARLHQAAAEQGKTQMQLGQAIEQLTQLRQEALAIQKARELQQALARSLQRLQAQIGSLQDQQQLLQARRRLQNAEKSLQAQVQRLNHQKRAQGQAIELLEQLSRELEAQILSQALQSLSQSLQSLVKALQLQAAEALLQQLAQQARALELLQAAARGAELLQRSRQELEQAKAALAQQAAASAESRQMQRQRQALEQQQQSLTALLQAILARRAALGLRLVRELQALQAALQELGHLRDELEAQLQRAQELAQQLRAQQQALEAVTKQRQQQLQAQLQQLQALQGLQELQKQIQEQARLREQVAQLQSLQQSLKALQAEKQHLHRKQASLLQSLQAQGKSLRAQLERIQNLLQSLQHQKAKRQAALLQALRLAQARLKKLEALQAALEQLQGKLVSLLQQLAQGIKAVAAQLIELISQVQQLLEAAKAAQSLAEQLQSLQNQRKQL"
+
+print("Analyzing protein structure prediction for sequence length:", len(test_sequence))
+
+# Generate MSA (simplified simulation)
+msa_result = msa_processor.generate_msa(test_sequence[:100], max_sequences=50)  # Use first 100 residues
+
+print(f"MSA Statistics:")
+print(f"Number of sequences: {msa_result['statistics']['num_sequences']}")
+print(f"Effective sequences: {msa_result['statistics']['effective_sequences']:.1f}")
+print(f"Average conservation: {msa_result['statistics']['average_conservation']:.3f}")
+print(f"Average coverage: {msa_result['coverage']['average_coverage']:.3f}")
+
+# Analyze coevolution
+coevo_result = coevolution_analyzer.analyze_coevolution(msa_result['aligned_sequences'])
+
+print(f"\nCoevolution Analysis:")
+print(f"Top 5 coevolving pairs:")
+for i, (pos_i, pos_j, score) in enumerate(coevo_result['top_pairs'][:5]):
+    print(f"{i+1}. Positions {pos_i}-{pos_j}: {score:.4f}")
+```
+
+## Advanced applications and future directions
+
+### Protein design and engineering
+
+AI enables the design of proteins with novel functions:
+
+```python
+class ProteinDesigner:
+    """AI-powered protein design for novel functions"""
+    
+    def __init__(self):
+        self.structure_predictor = ProteinStructurePredictor()
+        self.function_predictor = FunctionPredictor()
+        self.sequence_optimizer = SequenceOptimizer()
+    
+    def design_enzyme(self, target_reaction: dict, 
+                     scaffold_structure: str = None) -> dict:
+        """Design enzyme for specific catalytic reaction"""
+        
+        design_objectives = {
+            'catalytic_efficiency': target_reaction.get('kcat_km_target', 1e6),
+            'stability': target_reaction.get('stability_target', 60),  # Tm in °C
+            'solubility': target_reaction.get('solubility_target', 0.5),  # mg/mL
+            'specificity': target_reaction.get('specificity_target', 0.9)
+        }
+        
+        # Start with scaffold or de novo design
+        if scaffold_structure:
+            initial_sequence = self._extract_sequence_from_structure(scaffold_structure)
+        else:
+            initial_sequence = self._generate_initial_scaffold(target_reaction)
+        
+        # Iterative design optimization
+        optimized_designs = []
+        current_sequence = initial_sequence
+        
+        for iteration in range(20):  # Design iterations
+            # Predict structure and function
+            structure_pred = self.structure_predictor.predict_structure(current_sequence)
+            function_pred = self._predict_catalytic_function(
+                current_sequence, structure_pred, target_reaction
+            )
+            
+            # Evaluate design quality
+            design_score = self._evaluate_design(function_pred, design_objectives)
+            
+            optimized_designs.append({
+                'iteration': iteration,
+                'sequence': current_sequence,
+                'structure': structure_pred,
+                'function': function_pred,
+                'score': design_score
+            })
+            
+            # Generate next sequence variant
+            if iteration < 19:  # Don't generate after last iteration
+                current_sequence = self._propose_sequence_modifications(
+                    current_sequence, structure_pred, function_pred, design_objectives
+                )
+        
+        # Return best designs
+        optimized_designs.sort(key=lambda x: x['score'], reverse=True)
+        
+        return {
+            'best_designs': optimized_designs[:5],
+            'design_trajectory': optimized_designs,
+            'target_reaction': target_reaction,
+            'design_objectives': design_objectives
+        }
+    
+    def _generate_initial_scaffold(self, target_reaction: dict) -> str:
+        """Generate initial protein scaffold for target reaction"""
+        # Simplified scaffold generation
+        # In practice, would use knowledge of enzyme families and active site motifs
+        
+        reaction_type = target_reaction.get('type', 'hydrolysis')
+        
+        if reaction_type == 'hydrolysis':
+            # Start with serine protease-like scaffold
+            scaffold = "MKTAYIAKWLQGDKGKELVGTVLKGSGPFIFKFIVFSIGCLIMIGSLVIYGAGMVYFNKRSL"
+        elif reaction_type == 'oxidation':
+            # Start with oxidoreductase-like scaffold
+            scaffold = "MKLVGAEILRHGTRCGSAGGVLVDPDYAARVMAQLGTAAQNPNLGMRSGPPTGAMLLSDGE"
+        else:
+            # Generic scaffold
+            scaffold = "MKTAYIAKVWQGDKGKELVGTVLKGSGPFIFKFIVFSIGCLIMIGSLVIYGAGMVYFNKRSL"
+        
+        return scaffold
+    
+    def _predict_catalytic_function(self, sequence: str, structure_pred: dict, 
+                                  target_reaction: dict) -> dict:
+        """Predict catalytic properties of designed sequence"""
+        # Simplified function prediction
+        # In practice, would use quantum mechanical calculations, molecular dynamics
+        
+        # Extract structural features
+        coordinates = structure_pred['coordinates']
+        
+        # Identify potential active site (simplified)
+        active_site_residues = self._identify_active_site(sequence, coordinates)
+        
+        # Predict catalytic properties
+        predicted_properties = {
+            'kcat_km': np.random.lognormal(10, 2),  # Simplified prediction
+            'stability_tm': np.random.normal(50, 10),
+            'solubility': np.random.uniform(0.1, 2.0),
+            'specificity': np.random.uniform(0.3, 0.95),
+            'active_site_residues': active_site_residues
+        }
+        
+        return predicted_properties
+    
+    def _identify_active_site(self, sequence: str, coordinates: np.ndarray) -> list:
+        """Identify potential active site residues"""
+        # Simplified active site identification
+        # Look for catalytic triads, binding pockets, etc.
+        
+        active_residues = []
+        catalytic_aa = set('HISTDCW')  # Common catalytic residues
+        
+        for i, aa in enumerate(sequence):
+            if aa in catalytic_aa:
+                active_residues.append(i)
+        
+        return active_residues[:5]  # Top 5 candidates
+    
+    def _evaluate_design(self, function_pred: dict, objectives: dict) -> float:
+        """Evaluate design quality against objectives"""
+        score = 0.0
+        
+        # Catalytic efficiency
+        kcat_km_ratio = function_pred['kcat_km'] / objectives['catalytic_efficiency']
+        score += min(kcat_km_ratio, 1.0) * 0.4
+        
+        # Stability
+        stability_diff = abs(function_pred['stability_tm'] - objectives['stability'])
+        stability_score = max(0, 1 - stability_diff / 30.0)  # Penalty for deviation
+        score += stability_score * 0.3
+        
+        # Solubility
+        solubility_ratio = min(function_pred['solubility'] / objectives['solubility'], 1.0)
+        score += solubility_ratio * 0.2
+        
+        # Specificity
+        score += function_pred['specificity'] * 0.1
+        
+        return score
+    
+    def _propose_sequence_modifications(self, current_sequence: str, 
+                                      structure_pred: dict, function_pred: dict,
+                                      objectives: dict) -> str:
+        """Propose sequence modifications for next iteration"""
+        # Simplified sequence optimization
+        # In practice, would use more sophisticated methods
+        
+        sequence_list = list(current_sequence)
+        
+        # Focus modifications on regions that need improvement
+        if function_pred['kcat_km'] < objectives['catalytic_efficiency']:
+            # Modify active site region
+            active_site_positions = function_pred['active_site_residues']
+            for pos in active_site_positions[:2]:  # Modify top 2 active site residues
+                if pos < len(sequence_list):
+                    # Replace with potentially better catalytic residue
+                    catalytic_options = ['H', 'D', 'S', 'C', 'W']
+                    sequence_list[pos] = np.random.choice(catalytic_options)
+        
+        if function_pred['stability_tm'] < objectives['stability']:
+            # Introduce stabilizing mutations
+            for _ in range(2):
+                pos = np.random.randint(0, len(sequence_list))
+                # Introduce proline (helix breaker) or charged residues for salt bridges
+                stabilizing_options = ['P', 'K', 'E', 'R', 'D']
+                sequence_list[pos] = np.random.choice(stabilizing_options)
+        
+        if function_pred['solubility'] < objectives['solubility']:
+            # Introduce hydrophilic residues
+            for _ in range(2):
+                pos = np.random.randint(0, len(sequence_list))
+                hydrophilic_options = ['K', 'E', 'Q', 'N', 'S', 'T']
+                sequence_list[pos] = np.random.choice(hydrophilic_options)
+        
+        return ''.join(sequence_list)
+
+class FunctionPredictor:
+    """Predict protein function from sequence and structure"""
+    
+    def __init__(self):
+        self.function_models = {}
+    
+    def predict_go_terms(self, sequence: str, structure: dict = None) -> dict:
+        """Predict Gene Ontology terms for protein function"""
+        # Simplified GO term prediction
+        
+        # Analyze sequence motifs
+        motifs = self._find_functional_motifs(sequence)
+        
+        # Predict GO terms based on motifs and structure
+        go_predictions = {
+            'molecular_function': [],
+            'biological_process': [],
+            'cellular_component': []
+        }
+        
+        # Simple pattern matching (in practice, would use ML models)
+        if 'kinase' in motifs:
+            go_predictions['molecular_function'].append({
+                'term': 'protein kinase activity',
+                'go_id': 'GO:0004672',
+                'confidence': 0.85
+            })
+            go_predictions['biological_process'].append({
+                'term': 'protein phosphorylation',
+                'go_id': 'GO:0006468',
+                'confidence': 0.80
+            })
+        
+        if 'dna_binding' in motifs:
+            go_predictions['molecular_function'].append({
+                'term': 'DNA binding',
+                'go_id': 'GO:0003677',
+                'confidence': 0.75
+            })
+        
+        return go_predictions
+    
+    def _find_functional_motifs(self, sequence: str) -> list:
+        """Find functional motifs in sequence"""
+        motifs = []
+        
+        # Simple pattern matching for common motifs
+        if 'GXGXXG' in sequence.replace('X', '.'):  # Nucleotide binding
+            motifs.append('nucleotide_binding')
+        
+        if sequence.count('K') > len(sequence) * 0.1:  # High lysine content
+            motifs.append('kinase')
+        
+        if any(pattern in sequence for pattern in ['HEH', 'DED', 'CXC']):
+            motifs.append('dna_binding')
+        
+        return motifs
+
+# Example protein design
+designer = ProteinDesigner()
+
+# Define target reaction for enzyme design
+target_reaction = {
+    'type': 'hydrolysis',
+    'substrate': 'peptide_bond',
+    'kcat_km_target': 1e5,  # M^-1 s^-1
+    'stability_target': 65,  # °C
+    'solubility_target': 1.0,  # mg/mL
+    'specificity_target': 0.85
+}
+
+print("Designing enzyme for peptide hydrolysis...")
+
+# Design enzyme
+design_result = designer.design_enzyme(target_reaction)
+
+print("\nBest enzyme designs:")
+for i, design in enumerate(design_result['best_designs'][:3]):
+    print(f"\nDesign {i+1} (Score: {design['score']:.3f}):")
+    print(f"Sequence: {design['sequence'][:50]}...")
+    print(f"Predicted kcat/Km: {design['function']['kcat_km']:.1e} M^-1 s^-1")
+    print(f"Predicted stability: {design['function']['stability_tm']:.1f} °C")
+    print(f"Predicted solubility: {design['function']['solubility']:.2f} mg/mL")
+    print(f"Active site residues: {design['function']['active_site_residues']}")
+
+# Function prediction example
+function_predictor = FunctionPredictor()
+go_predictions = function_predictor.predict_go_terms(design_result['best_designs'][0]['sequence'])
+
+print(f"\nFunctional predictions for best design:")
+for category, terms in go_predictions.items():
+    if terms:
+        print(f"\n{category.replace('_', ' ').title()}:")
+        for term in terms:
+            print(f"  - {term['term']} ({term['go_id']}): {term['confidence']:.2f}")
+```
+
+## Conclusion
+
+The revolution in protein structure and function prediction represents one of AI's most significant contributions to biology. From the breakthrough achievements of AlphaFold to the emerging capabilities in protein design and engineering, these advances are transforming our understanding of life's molecular machinery.
+
+The integration of multiple AI approaches—transformer models for sequence analysis, geometric deep learning for 3D structure, evolutionary analysis for constraints, and generative models for design—creates powerful platforms for biological discovery. As these technologies continue to advance, we can expect even greater capabilities in predicting protein behavior, designing novel functions, and engineering biological systems for medicine, biotechnology, and basic research.
+
+The future lies not just in predicting existing protein structures, but in designing entirely new proteins with custom functionalities, opening unprecedented opportunities for therapeutic development, industrial biotechnology, and our fundamental understanding of biological systems.
