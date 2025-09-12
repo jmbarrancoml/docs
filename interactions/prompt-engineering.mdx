@@ -1,0 +1,708 @@
+---
+title: "Prompt Engineering"
+description: "Advanced techniques for designing effective prompts to optimize AI model performance and reliability."
+---
+
+# Prompt Engineering
+
+Prompt engineering is the art and science of crafting inputs to language models to achieve desired outputs reliably. This field combines linguistic understanding, cognitive psychology, and machine learning principles to optimize human-AI interaction.
+
+## Theoretical Foundations
+
+### Prompt Space and Model Behavior
+
+The relationship between prompts and model outputs can be understood through several theoretical lenses:
+
+**Attention Mechanism Perspective**: Prompts guide the model's attention patterns, influencing which parts of its training data are most relevant for response generation.
+
+**Information Theory**: Effective prompts minimize ambiguity while maximizing the signal-to-noise ratio in the communication between human intent and model understanding.
+
+**Cognitive Load Theory**: Well-designed prompts reduce the cognitive complexity required for the model to process and respond to requests.
+
+## Core Prompt Engineering Techniques
+
+### 1. Structured Prompting
+
+```python
+from typing import List, Dict, Any, Optional
+from dataclasses import dataclass
+from enum import Enum
+import json
+import re
+
+class PromptTemplate:
+    """Advanced prompt template system with validation and optimization."""
+    
+    def __init__(self, template: str, variables: Dict[str, Any] = None):
+        self.template = template
+        self.variables = variables or {}
+        self.required_vars = self._extract_variables()
+    
+    def _extract_variables(self) -> List[str]:
+        """Extract variable placeholders from template."""
+        return re.findall(r'\{(\w+)\}', self.template)
+    
+    def format(self, **kwargs) -> str:
+        """Format template with provided variables."""
+        all_vars = {**self.variables, **kwargs}
+        
+        # Validate required variables
+        missing = [var for var in self.required_vars if var not in all_vars]
+        if missing:
+            raise ValueError(f"Missing required variables: {missing}")
+        
+        return self.template.format(**all_vars)
+    
+    def optimize_for_model(self, model_type: str = "gpt-4") -> str:
+        """Optimize prompt structure for specific model architecture."""
+        if model_type.startswith("gpt"):
+            # Add explicit instruction markers for GPT models
+            template = "### INSTRUCTIONS ###\n" + self.template
+            if "examples" in self.template.lower():
+                template += "\n### YOUR RESPONSE ###"
+            return template
+        return self.template
+
+@dataclass
+class PromptComponent:
+    """Individual component of a complex prompt."""
+    name: str
+    content: str
+    priority: int
+    required: bool = True
+
+class PromptBuilder:
+    """Build complex prompts from modular components."""
+    
+    def __init__(self):
+        self.components: List[PromptComponent] = []
+        self.system_message: Optional[str] = None
+    
+    def add_system_message(self, message: str):
+        """Set system-level instructions."""
+        self.system_message = message
+    
+    def add_component(self, name: str, content: str, priority: int = 5, required: bool = True):
+        """Add a component to the prompt."""
+        self.components.append(PromptComponent(name, content, priority, required))
+    
+    def add_task_description(self, description: str):
+        """Add main task description."""
+        self.add_component("task", description, priority=10, required=True)
+    
+    def add_context(self, context: str):
+        """Add contextual information."""
+        self.add_component("context", f"Context: {context}", priority=8)
+    
+    def add_examples(self, examples: List[Dict[str, str]]):
+        """Add few-shot examples."""
+        example_text = "Examples:\n"
+        for i, example in enumerate(examples, 1):
+            example_text += f"\nExample {i}:\n"
+            example_text += f"Input: {example.get('input', '')}\n"
+            example_text += f"Output: {example.get('output', '')}\n"
+        
+        self.add_component("examples", example_text, priority=7)
+    
+    def add_constraints(self, constraints: List[str]):
+        """Add output constraints."""
+        constraint_text = "Constraints:\n" + "\n".join(f"- {c}" for c in constraints)
+        self.add_component("constraints", constraint_text, priority=6)
+    
+    def build(self) -> str:
+        """Build the complete prompt."""
+        # Sort components by priority (higher priority first)
+        sorted_components = sorted(self.components, key=lambda x: x.priority, reverse=True)
+        
+        prompt_parts = []
+        
+        if self.system_message:
+            prompt_parts.append(f"System: {self.system_message}\n")
+        
+        for component in sorted_components:
+            prompt_parts.append(component.content)
+        
+        return "\n\n".join(prompt_parts)
+```
+
+### 2. Chain-of-Thought Prompting
+
+```python
+class ChainOfThoughtPrompt:
+    """Generate prompts that encourage step-by-step reasoning."""
+    
+    def __init__(self, problem: str, domain: str = "general"):
+        self.problem = problem
+        self.domain = domain
+    
+    def generate_cot_prompt(self) -> str:
+        """Generate a chain-of-thought prompt."""
+        base_prompt = f"""Problem: {self.problem}
+
+Let's approach this step by step:
+
+Step 1: Understand the problem
+- What exactly is being asked?
+- What information do we have?
+- What do we need to find or determine?
+
+Step 2: Identify the approach
+- What method or strategy should we use?
+- Are there any relevant principles or frameworks?
+
+Step 3: Work through the solution
+- Apply the chosen approach systematically
+- Show all intermediate steps
+- Verify each step makes sense
+
+Step 4: Verify and conclude
+- Check if the solution addresses the original problem
+- Consider alternative approaches or edge cases
+- State the final answer clearly
+
+Please work through each step methodically."""
+        
+        return base_prompt
+    
+    def generate_scientific_cot_prompt(self) -> str:
+        """Generate a chain-of-thought prompt for scientific problems."""
+        return f"""Scientific Problem: {self.problem}
+
+Let's solve this using scientific methodology:
+
+1. Problem Analysis:
+   - Define the scientific question clearly
+   - Identify relevant variables and parameters
+   - Consider the scope and constraints
+
+2. Theoretical Framework:
+   - What scientific principles apply?
+   - Are there established models or theories?
+   - What assumptions are we making?
+
+3. Methodology:
+   - What approach will we use?
+   - How will we analyze the data or information?
+   - What tools or techniques are needed?
+
+4. Solution Development:
+   - Apply the methodology step by step
+   - Show calculations and reasoning
+   - Document any approximations or simplifications
+
+5. Validation and Interpretation:
+   - Does the solution make physical/scientific sense?
+   - How confident are we in the result?
+   - What are the implications or applications?
+
+Please proceed systematically through each stage."""
+
+class ReasoningChain:
+    """Model a complete reasoning chain for complex problems."""
+    
+    def __init__(self):
+        self.steps: List[Dict[str, Any]] = []
+        self.confidence_scores: List[float] = []
+    
+    def add_step(self, description: str, reasoning: str, confidence: float = 0.8):
+        """Add a reasoning step."""
+        step = {
+            "step_number": len(self.steps) + 1,
+            "description": description,
+            "reasoning": reasoning,
+            "confidence": confidence
+        }
+        self.steps.append(step)
+        self.confidence_scores.append(confidence)
+    
+    def generate_prompt(self, problem: str) -> str:
+        """Generate a prompt that guides through the reasoning chain."""
+        prompt = f"Problem: {problem}\n\n"
+        prompt += "Please solve this by following these reasoning steps:\n\n"
+        
+        for step in self.steps:
+            prompt += f"Step {step['step_number']}: {step['description']}\n"
+            prompt += f"Reasoning approach: {step['reasoning']}\n\n"
+        
+        prompt += "For each step, please:\n"
+        prompt += "- Show your work clearly\n"
+        prompt += "- Explain your reasoning\n"
+        prompt += "- State your confidence in the step\n"
+        prompt += "- Connect to the next step logically\n"
+        
+        return prompt
+    
+    def get_overall_confidence(self) -> float:
+        """Calculate overall confidence in the reasoning chain."""
+        if not self.confidence_scores:
+            return 0.0
+        return sum(self.confidence_scores) / len(self.confidence_scores)
+```
+
+### 3. Few-Shot Learning Optimization
+
+```python
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.metrics.pairwise import cosine_similarity
+import numpy as np
+
+class ExampleSelector:
+    """Intelligently select examples for few-shot prompting."""
+    
+    def __init__(self):
+        self.examples: List[Dict[str, str]] = []
+        self.vectorizer = TfidfVectorizer(stop_words='english')
+        self.example_vectors = None
+    
+    def add_example(self, input_text: str, output_text: str, metadata: Dict[str, Any] = None):
+        """Add an example to the pool."""
+        example = {
+            "input": input_text,
+            "output": output_text,
+            "metadata": metadata or {}
+        }
+        self.examples.append(example)
+    
+    def _vectorize_examples(self):
+        """Create vector representations of examples."""
+        if not self.examples:
+            return
+        
+        input_texts = [ex["input"] for ex in self.examples]
+        self.example_vectors = self.vectorizer.fit_transform(input_texts)
+    
+    def select_examples(self, query: str, n_examples: int = 3, method: str = "similarity") -> List[Dict[str, str]]:
+        """Select the most relevant examples for a query."""
+        if not self.examples:
+            return []
+        
+        if self.example_vectors is None:
+            self._vectorize_examples()
+        
+        if method == "similarity":
+            return self._select_by_similarity(query, n_examples)
+        elif method == "diversity":
+            return self._select_by_diversity(query, n_examples)
+        else:
+            return self.examples[:n_examples]
+    
+    def _select_by_similarity(self, query: str, n_examples: int) -> List[Dict[str, str]]:
+        """Select examples most similar to the query."""
+        query_vector = self.vectorizer.transform([query])
+        similarities = cosine_similarity(query_vector, self.example_vectors).flatten()
+        
+        # Get indices of most similar examples
+        top_indices = np.argsort(similarities)[-n_examples:][::-1]
+        
+        return [self.examples[i] for i in top_indices]
+    
+    def _select_by_diversity(self, query: str, n_examples: int) -> List[Dict[str, str]]:
+        """Select diverse examples that cover different aspects."""
+        if n_examples >= len(self.examples):
+            return self.examples
+        
+        # Start with most similar example
+        query_vector = self.vectorizer.transform([query])
+        similarities = cosine_similarity(query_vector, self.example_vectors).flatten()
+        
+        selected_indices = [np.argmax(similarities)]
+        selected_examples = [self.examples[selected_indices[0]]]
+        
+        # Iteratively select most diverse remaining examples
+        for _ in range(n_examples - 1):
+            max_min_distance = -1
+            best_candidate = -1
+            
+            for i, example in enumerate(self.examples):
+                if i in selected_indices:
+                    continue
+                
+                # Calculate minimum distance to selected examples
+                distances = []
+                for selected_idx in selected_indices:
+                    distance = 1 - cosine_similarity(
+                        self.example_vectors[i:i+1],
+                        self.example_vectors[selected_idx:selected_idx+1]
+                    )[0, 0]
+                    distances.append(distance)
+                
+                min_distance = min(distances)
+                if min_distance > max_min_distance:
+                    max_min_distance = min_distance
+                    best_candidate = i
+            
+            if best_candidate != -1:
+                selected_indices.append(best_candidate)
+                selected_examples.append(self.examples[best_candidate])
+        
+        return selected_examples
+
+class FewShotPromptGenerator:
+    """Generate optimized few-shot prompts."""
+    
+    def __init__(self, selector: ExampleSelector):
+        self.selector = selector
+    
+    def generate_prompt(self, query: str, task_description: str, n_examples: int = 3) -> str:
+        """Generate a few-shot prompt with selected examples."""
+        examples = self.selector.select_examples(query, n_examples)
+        
+        prompt = f"Task: {task_description}\n\n"
+        
+        if examples:
+            prompt += "Examples:\n\n"
+            for i, example in enumerate(examples, 1):
+                prompt += f"Example {i}:\n"
+                prompt += f"Input: {example['input']}\n"
+                prompt += f"Output: {example['output']}\n\n"
+        
+        prompt += f"Now, please complete this task:\n"
+        prompt += f"Input: {query}\n"
+        prompt += f"Output:"
+        
+        return prompt
+```
+
+## Advanced Prompt Engineering Patterns
+
+### Scientific Literature Analysis Integration
+
+```python
+class ScientificPromptEngineer:
+    """Specialized prompt engineering for scientific applications."""
+    
+    def __init__(self, freiya_client=None):
+        self.freiya_client = freiya_client
+        self.domain_expertise = {}
+    
+    def generate_literature_analysis_prompt(self, research_question: str, context: str = "") -> str:
+        """Generate prompt for analyzing scientific literature."""
+        prompt = f"""
+Scientific Literature Analysis Task:
+
+Research Question: {research_question}
+
+Context: {context if context else "General scientific inquiry"}
+
+Please analyze this research question using the following systematic approach:
+
+1. **Domain Identification**:
+   - Identify the primary scientific domain(s)
+   - Note any interdisciplinary aspects
+   - Consider the scope and specificity
+
+2. **Literature Context**:
+   - What are the key concepts and terminology?
+   - What methodologies are typically used in this field?
+   - What are the current research trends and gaps?
+
+3. **Analysis Framework**:
+   - How should we structure the literature search?
+   - What databases and sources are most relevant?
+   - What inclusion/exclusion criteria should we apply?
+
+4. **Critical Evaluation**:
+   - How do we assess the quality of evidence?
+   - What are potential biases or limitations to consider?
+   - How do we synthesize conflicting findings?
+
+5. **Knowledge Integration**:
+   - How do the findings relate to existing theory?
+   - What are the practical implications?
+   - What future research directions are suggested?
+
+Please provide a comprehensive analysis following this framework, ensuring scientific rigor and objectivity.
+"""
+        return prompt
+    
+    def generate_hypothesis_evaluation_prompt(self, hypothesis: str, evidence: List[str]) -> str:
+        """Generate prompt for evaluating scientific hypotheses."""
+        evidence_text = "\n".join(f"- {ev}" for ev in evidence)
+        
+        prompt = f"""
+Scientific Hypothesis Evaluation:
+
+Hypothesis: {hypothesis}
+
+Available Evidence:
+{evidence_text}
+
+Please evaluate this hypothesis using scientific methodology:
+
+1. **Hypothesis Analysis**:
+   - Is the hypothesis testable and falsifiable?
+   - How specific and well-defined is it?
+   - What are the key predictions it makes?
+
+2. **Evidence Assessment**:
+   - How well does the evidence support the hypothesis?
+   - What is the quality and reliability of each piece of evidence?
+   - Are there any contradictory findings?
+
+3. **Statistical Considerations**:
+   - What statistical methods would be appropriate?
+   - Are there potential confounding variables?
+   - What sample sizes or effect sizes are relevant?
+
+4. **Alternative Explanations**:
+   - What alternative hypotheses could explain the evidence?
+   - How do we distinguish between competing explanations?
+   - What additional evidence would be decisive?
+
+5. **Conclusion and Recommendations**:
+   - What is your overall assessment of the hypothesis?
+   - What confidence level can we assign?
+   - What research should be prioritized next?
+
+Please provide a thorough scientific evaluation with appropriate caveats and limitations.
+"""
+        return prompt
+    
+    def generate_methodology_design_prompt(self, research_objective: str, constraints: List[str]) -> str:
+        """Generate prompt for designing research methodologies."""
+        constraint_text = "\n".join(f"- {c}" for c in constraints)
+        
+        prompt = f"""
+Research Methodology Design:
+
+Research Objective: {research_objective}
+
+Constraints:
+{constraint_text}
+
+Please design a comprehensive research methodology:
+
+1. **Study Design**:
+   - What type of study design is most appropriate?
+   - What are the key variables (independent, dependent, confounding)?
+   - How will we control for bias and confounds?
+
+2. **Data Collection**:
+   - What data collection methods should we use?
+   - What instruments or measurements are needed?
+   - How will we ensure data quality and reliability?
+
+3. **Sample Design**:
+   - What is the target population?
+   - What sampling method is appropriate?
+   - How do we determine adequate sample size?
+
+4. **Analysis Plan**:
+   - What statistical or analytical methods will we use?
+   - How will we handle missing data or outliers?
+   - What validation procedures are needed?
+
+5. **Ethical Considerations**:
+   - What ethical approvals or considerations are needed?
+   - How do we protect participant privacy and rights?
+   - What are the potential risks and benefits?
+
+6. **Timeline and Resources**:
+   - What is a realistic timeline for completion?
+   - What resources and expertise are required?
+   - What are potential bottlenecks or challenges?
+
+Please provide a detailed, feasible methodology that addresses the research objective while respecting the constraints.
+"""
+        return prompt
+
+class PromptOptimizer:
+    """Optimize prompts through iterative testing and refinement."""
+    
+    def __init__(self):
+        self.test_cases: List[Dict[str, Any]] = []
+        self.performance_history: List[Dict[str, Any]] = []
+    
+    def add_test_case(self, input_text: str, expected_output: str, evaluation_criteria: Dict[str, Any]):
+        """Add a test case for prompt evaluation."""
+        test_case = {
+            "input": input_text,
+            "expected": expected_output,
+            "criteria": evaluation_criteria
+        }
+        self.test_cases.append(test_case)
+    
+    def evaluate_prompt(self, prompt_template: str, model_outputs: List[str]) -> Dict[str, float]:
+        """Evaluate prompt performance against test cases."""
+        if len(model_outputs) != len(self.test_cases):
+            raise ValueError("Number of outputs must match number of test cases")
+        
+        scores = {}
+        for criterion in ["accuracy", "clarity", "completeness", "efficiency"]:
+            scores[criterion] = 0.0
+        
+        for i, (test_case, output) in enumerate(zip(self.test_cases, model_outputs)):
+            # Evaluate each criterion (simplified scoring)
+            case_scores = self._score_output(output, test_case)
+            for criterion, score in case_scores.items():
+                scores[criterion] += score
+        
+        # Average scores across test cases
+        for criterion in scores:
+            scores[criterion] /= len(self.test_cases)
+        
+        return scores
+    
+    def _score_output(self, output: str, test_case: Dict[str, Any]) -> Dict[str, float]:
+        """Score an individual output against a test case."""
+        # Simplified scoring logic - in practice, this would be more sophisticated
+        scores = {}
+        
+        expected = test_case["expected"].lower()
+        actual = output.lower()
+        
+        # Accuracy: keyword overlap
+        expected_words = set(expected.split())
+        actual_words = set(actual.split())
+        accuracy = len(expected_words.intersection(actual_words)) / len(expected_words)
+        scores["accuracy"] = min(accuracy, 1.0)
+        
+        # Clarity: length and structure
+        clarity = min(1.0, 1.0 - abs(len(output) - len(test_case["expected"])) / len(test_case["expected"]))
+        scores["clarity"] = max(clarity, 0.0)
+        
+        # Completeness: coverage of key points
+        completeness = min(1.0, len(actual.split()) / len(expected.split()))
+        scores["completeness"] = completeness
+        
+        # Efficiency: conciseness
+        efficiency = min(1.0, len(expected) / len(output)) if len(output) > 0 else 0.0
+        scores["efficiency"] = efficiency
+        
+        return scores
+    
+    def suggest_improvements(self, current_prompt: str, scores: Dict[str, float]) -> List[str]:
+        """Suggest improvements based on performance scores."""
+        suggestions = []
+        
+        if scores["accuracy"] < 0.7:
+            suggestions.append("Add more specific examples or clearer task definitions")
+        
+        if scores["clarity"] < 0.6:
+            suggestions.append("Simplify language and improve prompt structure")
+        
+        if scores["completeness"] < 0.8:
+            suggestions.append("Add explicit requirements for all expected output components")
+        
+        if scores["efficiency"] < 0.7:
+            suggestions.append("Add constraints on response length and format")
+        
+        return suggestions
+```
+
+## Integration with EderSpark Freiya Platform
+
+```python
+class FreiyaPromptIntegration:
+    """Integrate prompt engineering with Freiya's scientific search capabilities."""
+    
+    def __init__(self, freiya_client):
+        self.freiya_client = freiya_client
+        self.prompt_builder = PromptBuilder()
+    
+    def generate_context_aware_prompt(self, query: str, max_papers: int = 5) -> str:
+        """Generate a prompt enhanced with relevant scientific literature."""
+        # Search for relevant papers
+        search_results = self.freiya_client.search(query, limit=max_papers)
+        
+        # Extract key information from papers
+        context_info = []
+        for paper in search_results:
+            context_info.append(f"- {paper.title} ({paper.year}): {paper.abstract[:200]}...")
+        
+        context_text = "\n".join(context_info)
+        
+        # Build enhanced prompt
+        self.prompt_builder.add_task_description(f"Research Question: {query}")
+        self.prompt_builder.add_context(f"Relevant Literature:\n{context_text}")
+        self.prompt_builder.add_constraints([
+            "Base your response on current scientific understanding",
+            "Cite relevant papers when applicable",
+            "Acknowledge any limitations or uncertainties"
+        ])
+        
+        return self.prompt_builder.build()
+    
+    def generate_comparative_analysis_prompt(self, topic: str, methodologies: List[str]) -> str:
+        """Generate prompt for comparing different research methodologies."""
+        methodology_context = []
+        
+        for method in methodologies:
+            # Search for papers using each methodology
+            search_query = f"{topic} {method}"
+            results = self.freiya_client.search(search_query, limit=3)
+            
+            method_papers = []
+            for paper in results:
+                method_papers.append(f"  - {paper.title} ({paper.year})")
+            
+            methodology_context.append(f"{method}:\n" + "\n".join(method_papers))
+        
+        context_text = "\n\n".join(methodology_context)
+        
+        prompt = f"""
+Comparative Methodology Analysis: {topic}
+
+Relevant Literature by Methodology:
+{context_text}
+
+Please provide a comprehensive comparison of these methodologies for studying {topic}:
+
+1. **Methodology Overview**:
+   - Briefly describe each methodology
+   - What are the key principles and approaches?
+   - What types of questions does each method address best?
+
+2. **Strengths and Limitations**:
+   - What are the advantages of each approach?
+   - What are the potential drawbacks or limitations?
+   - In what contexts is each method most/least appropriate?
+
+3. **Empirical Evidence**:
+   - What does the literature show about each method's effectiveness?
+   - Are there any direct comparisons in the literature?
+   - What are the typical outcomes or findings?
+
+4. **Practical Considerations**:
+   - What resources and expertise are required?
+   - How complex is implementation?
+   - What are the time and cost implications?
+
+5. **Recommendations**:
+   - Which methodology would you recommend for different scenarios?
+   - How might these methods be combined or integrated?
+   - What factors should guide the choice of methodology?
+
+Please ensure your analysis is evidence-based and acknowledges any gaps in the literature.
+"""
+        return prompt
+```
+
+## Best Practices and Evaluation
+
+### Prompt Quality Metrics
+
+- **Clarity**: How clearly does the prompt communicate the desired task?
+- **Specificity**: Does the prompt provide sufficient detail for consistent results?
+- **Efficiency**: Is the prompt concise while maintaining effectiveness?
+- **Robustness**: Does the prompt work well across different inputs and contexts?
+- **Alignment**: Do the outputs align with the intended goals and constraints?
+
+### Common Pitfalls and Solutions
+
+1. **Ambiguous Instructions**: Use specific, actionable language with clear success criteria
+2. **Insufficient Context**: Provide relevant background information and constraints
+3. **Poor Example Selection**: Choose examples that represent the full range of expected inputs
+4. **Length Optimization**: Balance completeness with conciseness to avoid overwhelming the model
+5. **Bias Introduction**: Carefully review prompts for implicit biases or assumptions
+
+### Continuous Improvement
+
+Effective prompt engineering is an iterative process requiring:
+- Systematic testing with diverse inputs
+- Performance monitoring and analysis
+- Regular updates based on new model capabilities
+- Integration of user feedback and domain expertise
+- Documentation of successful patterns and techniques
+
+The integration of prompt engineering with platforms like EderSpark's Freiya enables more sophisticated, context-aware interactions that leverage the vast scientific literature to provide more accurate and comprehensive responses.

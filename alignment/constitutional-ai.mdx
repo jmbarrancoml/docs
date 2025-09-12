@@ -1,0 +1,1052 @@
+---
+title: "Constitutional AI Methods"
+description: "Comprehensive guide to Constitutional AI techniques for self-supervised alignment, principle-based training, and scalable oversight of AI systems"
+---
+
+# Constitutional AI Methods
+
+Constitutional AI (CAI) represents a paradigm shift in AI alignment, enabling systems to learn and apply a set of principles or "constitution" to guide their behavior without requiring extensive human oversight. This guide explores advanced Constitutional AI techniques, self-supervised alignment methods, and scalable approaches to training AI systems that adhere to human values and ethical principles.
+
+## Foundations of Constitutional AI
+
+### Core Principles and Framework
+
+Constitutional AI operates on the principle that AI systems can be trained to follow a set of constitutional principles through self-supervision and critique:
+
+```python
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+import numpy as np
+from typing import Dict, List, Tuple, Optional, Union, Callable, Any
+from dataclasses import dataclass, field
+from abc import ABC, abstractmethod
+import logging
+import json
+from enum import Enum
+import re
+from collections import defaultdict
+import random
+
+@dataclass
+class ConstitutionalPrinciple:
+    """Representation of a constitutional principle"""
+    name: str
+    description: str
+    critique_prompt: str
+    revision_prompt: str
+    priority: float = 1.0
+    domain_specific: bool = False
+    examples: List[Dict[str, str]] = field(default_factory=list)
+    
+    def __post_init__(self):
+        if not self.examples:
+            self.examples = []
+
+@dataclass
+class ConstitutionConfig:
+    """Configuration for Constitutional AI training"""
+    num_critique_iterations: int = 3
+    critique_temperature: float = 0.8
+    revision_temperature: float = 0.9
+    self_critique_weight: float = 0.7
+    principle_adherence_weight: float = 0.3
+    diversity_penalty: float = 0.1
+    consistency_reward: float = 0.2
+
+class Constitution:
+    """A constitution defining principles for AI behavior"""
+    
+    def __init__(self):
+        self.principles = self._initialize_default_principles()
+        self.principle_hierarchy = {}
+        self.contextual_weights = {}
+    
+    def _initialize_default_principles(self) -> Dict[str, ConstitutionalPrinciple]:
+        """Initialize default constitutional principles"""
+        
+        return {
+            'helpfulness': ConstitutionalPrinciple(
+                name='helpfulness',
+                description='Provide helpful, accurate, and relevant information to assist users',
+                critique_prompt='Is this response helpful and relevant to the user\'s query? Does it provide useful information?',
+                revision_prompt='Revise this response to be more helpful and relevant to the user\'s needs.',
+                priority=0.9,
+                examples=[
+                    {
+                        'scenario': 'User asks for cooking advice',
+                        'good_response': 'Here are specific steps with measurements and cooking times...',
+                        'bad_response': 'Just cook it until done.'
+                    }
+                ]
+            ),
+            
+            'harmlessness': ConstitutionalPrinciple(
+                name='harmlessness',
+                description='Avoid generating content that could cause harm, including violence, illegal activities, or dangerous advice',
+                critique_prompt='Could this response lead to harm, illegal activities, or dangerous outcomes? Does it promote violence or unsafe behavior?',
+                revision_prompt='Revise this response to remove any harmful, dangerous, or illegal content while maintaining helpfulness.',
+                priority=1.0,
+                examples=[
+                    {
+                        'scenario': 'Request for dangerous chemical synthesis',
+                        'good_response': 'I cannot provide instructions for synthesizing dangerous chemicals. Let me suggest safer chemistry experiments instead.',
+                        'bad_response': 'Here\'s how to make explosives at home...'
+                    }
+                ]
+            ),
+            
+            'honesty': ConstitutionalPrinciple(
+                name='honesty',
+                description='Be truthful and acknowledge uncertainty rather than providing false or misleading information',
+                critique_prompt='Is this response truthful and accurate? Does it appropriately acknowledge uncertainty where it exists?',
+                revision_prompt='Revise this response to be more truthful and to acknowledge any uncertainty or limitations in the information.',
+                priority=0.95,
+                examples=[
+                    {
+                        'scenario': 'Question about uncertain scientific topic',
+                        'good_response': 'Current research suggests X, but there is still uncertainty about Y. More studies are needed.',
+                        'bad_response': 'Scientists have definitively proven X.'
+                    }
+                ]
+            ),
+            
+            'privacy_respect': ConstitutionalPrinciple(
+                name='privacy_respect',
+                description='Respect user privacy and avoid requesting or sharing personal information inappropriately',
+                critique_prompt='Does this response respect user privacy? Does it avoid requesting unnecessary personal information?',
+                revision_prompt='Revise this response to better respect user privacy and avoid requesting personal information.',
+                priority=0.8,
+                examples=[
+                    {
+                        'scenario': 'User seeking help with a problem',
+                        'good_response': 'I can help you with general approaches to this problem.',
+                        'bad_response': 'Please share your personal details, address, and financial information.'
+                    }
+                ]
+            ),
+            
+            'non_discrimination': ConstitutionalPrinciple(
+                name='non_discrimination',
+                description='Treat all individuals fairly regardless of race, gender, religion, or other protected characteristics',
+                critique_prompt='Does this response treat all people fairly and avoid discrimination based on protected characteristics?',
+                revision_prompt='Revise this response to ensure fair treatment of all individuals regardless of their background.',
+                priority=0.9,
+                examples=[
+                    {
+                        'scenario': 'Question about capabilities of different groups',
+                        'good_response': 'Individual capabilities vary widely within all groups and are not determined by group membership.',
+                        'bad_response': 'People from group X are naturally better at Y than people from group Z.'
+                    }
+                ]
+            ),
+            
+            'intellectual_humility': ConstitutionalPrinciple(
+                name='intellectual_humility',
+                description='Acknowledge limitations, express appropriate uncertainty, and avoid overconfident claims',
+                critique_prompt='Does this response demonstrate appropriate intellectual humility? Does it avoid overconfident claims?',
+                revision_prompt='Revise this response to demonstrate more intellectual humility and appropriate uncertainty.',
+                priority=0.7,
+                examples=[
+                    {
+                        'scenario': 'Complex philosophical question',
+                        'good_response': 'This is a complex question with multiple perspectives. Here are some key viewpoints...',
+                        'bad_response': 'The answer is definitively X and anyone who disagrees is wrong.'
+                    }
+                ]
+            )
+        }
+    
+    def add_principle(self, principle: ConstitutionalPrinciple):
+        """Add a new principle to the constitution"""
+        self.principles[principle.name] = principle
+    
+    def set_contextual_weights(self, context: str, weights: Dict[str, float]):
+        """Set context-specific principle weights"""
+        self.contextual_weights[context] = weights
+    
+    def get_active_principles(self, context: str = 'general') -> List[ConstitutionalPrinciple]:
+        """Get active principles for a given context"""
+        
+        if context in self.contextual_weights:
+            weights = self.contextual_weights[context]
+            # Sort principles by contextual weight
+            sorted_principles = sorted(
+                self.principles.values(),
+                key=lambda p: weights.get(p.name, p.priority),
+                reverse=True
+            )
+            return sorted_principles
+        else:
+            # Use default priority ordering
+            return sorted(self.principles.values(), key=lambda p: p.priority, reverse=True)
+
+class ConstitutionalCritic(nn.Module):
+    """Neural critic for evaluating constitutional adherence"""
+    
+    def __init__(self, input_dim: int, hidden_dim: int = 512, num_principles: int = 6):
+        super().__init__()
+        
+        # Text encoder for responses
+        self.response_encoder = nn.Sequential(
+            nn.Linear(input_dim, hidden_dim),
+            nn.LayerNorm(hidden_dim),
+            nn.ReLU(),
+            nn.Dropout(0.1),
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.LayerNorm(hidden_dim),
+            nn.ReLU(),
+            nn.Dropout(0.1)
+        )
+        
+        # Principle-specific evaluation heads
+        self.principle_heads = nn.ModuleDict()
+        for i in range(num_principles):
+            self.principle_heads[f'principle_{i}'] = nn.Sequential(
+                nn.Linear(hidden_dim, hidden_dim // 2),
+                nn.ReLU(),
+                nn.Dropout(0.1),
+                nn.Linear(hidden_dim // 2, 1),
+                nn.Sigmoid()  # Score between 0 and 1
+            )
+        
+        # Overall constitutional adherence head
+        self.overall_head = nn.Sequential(
+            nn.Linear(hidden_dim + num_principles, hidden_dim // 2),
+            nn.ReLU(),
+            nn.Linear(hidden_dim // 2, 1),
+            nn.Sigmoid()
+        )
+        
+        # Attention mechanism for principle importance
+        self.principle_attention = nn.MultiheadAttention(
+            embed_dim=hidden_dim,
+            num_heads=8,
+            batch_first=True
+        )
+    
+    def forward(self, response_embedding: torch.Tensor, 
+                principle_embeddings: Optional[torch.Tensor] = None) -> Dict[str, torch.Tensor]:
+        """Forward pass for constitutional evaluation"""
+        
+        # Encode response
+        response_encoded = self.response_encoder(response_embedding)
+        
+        # Evaluate against each principle
+        principle_scores = {}
+        principle_score_values = []
+        
+        for principle_id, head in self.principle_heads.items():
+            score = head(response_encoded)
+            principle_scores[principle_id] = score
+            principle_score_values.append(score)
+        
+        # Combine principle scores
+        principle_tensor = torch.cat(principle_score_values, dim=-1)
+        
+        # Apply attention to understand principle interactions
+        if principle_embeddings is not None:
+            attended_response, attention_weights = self.principle_attention(
+                response_encoded.unsqueeze(1),
+                principle_embeddings,
+                principle_embeddings
+            )
+            response_encoded = attended_response.squeeze(1)
+        
+        # Overall constitutional adherence
+        combined_features = torch.cat([response_encoded, principle_tensor], dim=-1)
+        overall_score = self.overall_head(combined_features)
+        
+        return {
+            'principle_scores': principle_scores,
+            'overall_score': overall_score,
+            'attention_weights': attention_weights if principle_embeddings is not None else None
+        }
+
+class ConstitutionalTrainer:
+    """Trainer for Constitutional AI systems"""
+    
+    def __init__(self, model: nn.Module, critic: ConstitutionalCritic, 
+                 constitution: Constitution, config: ConstitutionConfig):
+        self.model = model
+        self.critic = critic
+        self.constitution = constitution
+        self.config = config
+        self.training_history = []
+    
+    def constitutional_training_step(self, initial_responses: List[str], 
+                                   contexts: List[str], principles: List[ConstitutionalPrinciple],
+                                   optimizer: torch.optim.Optimizer) -> Dict[str, float]:
+        """Single constitutional training step"""
+        
+        self.model.train()
+        self.critic.train()
+        
+        # Phase 1: Self-critique and revision
+        revised_responses = []
+        critique_scores = []
+        
+        for response, context in zip(initial_responses, contexts):
+            # Generate self-critique
+            critiques = self._generate_self_critiques(response, principles, context)
+            
+            # Revise based on critiques
+            revised_response = self._revise_response(response, critiques, principles, context)
+            revised_responses.append(revised_response)
+            
+            # Score the revision
+            critique_score = self._evaluate_constitutional_adherence(revised_response, principles)
+            critique_scores.append(critique_score)
+        
+        # Phase 2: Train critic
+        critic_loss = self._train_critic(initial_responses, revised_responses, critique_scores)
+        
+        # Phase 3: Train model with constitutional loss
+        model_loss = self._train_model_constitutional(revised_responses, contexts, principles, optimizer)
+        
+        # Phase 4: Consistency regularization
+        consistency_loss = self._compute_consistency_loss(initial_responses, revised_responses)
+        
+        # Combined loss
+        total_loss = (
+            self.config.self_critique_weight * model_loss +
+            self.config.principle_adherence_weight * critic_loss +
+            self.config.consistency_reward * consistency_loss
+        )
+        
+        # Update model
+        optimizer.zero_grad()
+        total_loss.backward()
+        torch.nn.utils.clip_grad_norm_(self.model.parameters(), 1.0)
+        optimizer.step()
+        
+        return {
+            'total_loss': total_loss.item(),
+            'model_loss': model_loss.item() if isinstance(model_loss, torch.Tensor) else model_loss,
+            'critic_loss': critic_loss.item() if isinstance(critic_loss, torch.Tensor) else critic_loss,
+            'consistency_loss': consistency_loss.item() if isinstance(consistency_loss, torch.Tensor) else consistency_loss,
+            'avg_critique_score': np.mean(critique_scores)
+        }
+    
+    def _generate_self_critiques(self, response: str, principles: List[ConstitutionalPrinciple],
+                                context: str) -> Dict[str, str]:
+        """Generate self-critiques based on constitutional principles"""
+        
+        critiques = {}
+        
+        for principle in principles:
+            # Create critique prompt
+            critique_prompt = f"""
+            Response: {response}
+            
+            Principle: {principle.description}
+            
+            Critique Question: {principle.critique_prompt}
+            
+            Provide a detailed critique evaluating how well this response adheres to the principle:
+            """
+            
+            # Generate critique (this would use the actual model in practice)
+            critique = self._generate_text(critique_prompt, temperature=self.config.critique_temperature)
+            critiques[principle.name] = critique
+        
+        return critiques
+    
+    def _revise_response(self, original_response: str, critiques: Dict[str, str],
+                        principles: List[ConstitutionalPrinciple], context: str) -> str:
+        """Revise response based on critiques"""
+        
+        # Combine critiques into revision instructions
+        revision_instructions = []
+        
+        for principle in principles:
+            if principle.name in critiques:
+                critique = critiques[principle.name]
+                revision_instruction = f"{principle.revision_prompt}\n\nCritique: {critique}"
+                revision_instructions.append(revision_instruction)
+        
+        # Create revision prompt
+        revision_prompt = f"""
+        Original Response: {original_response}
+        
+        Revision Instructions:
+        {chr(10).join(revision_instructions)}
+        
+        Please provide a revised response that addresses these concerns while maintaining helpfulness:
+        """
+        
+        # Generate revised response
+        revised_response = self._generate_text(revision_prompt, temperature=self.config.revision_temperature)
+        
+        return revised_response
+    
+    def _evaluate_constitutional_adherence(self, response: str, 
+                                         principles: List[ConstitutionalPrinciple]) -> float:
+        """Evaluate how well a response adheres to constitutional principles"""
+        
+        total_score = 0.0
+        total_weight = 0.0
+        
+        for principle in principles:
+            # Evaluate adherence to this principle
+            adherence_score = self._evaluate_principle_adherence(response, principle)
+            
+            total_score += adherence_score * principle.priority
+            total_weight += principle.priority
+        
+        return total_score / total_weight if total_weight > 0 else 0.0
+    
+    def _evaluate_principle_adherence(self, response: str, principle: ConstitutionalPrinciple) -> float:
+        """Evaluate adherence to a specific principle"""
+        
+        # This would use more sophisticated evaluation in practice
+        # For now, using simple heuristics based on principle type
+        
+        if principle.name == 'helpfulness':
+            return self._evaluate_helpfulness(response)
+        elif principle.name == 'harmlessness':
+            return self._evaluate_harmlessness(response)
+        elif principle.name == 'honesty':
+            return self._evaluate_honesty(response)
+        elif principle.name == 'privacy_respect':
+            return self._evaluate_privacy_respect(response)
+        elif principle.name == 'non_discrimination':
+            return self._evaluate_non_discrimination(response)
+        elif principle.name == 'intellectual_humility':
+            return self._evaluate_intellectual_humility(response)
+        else:
+            return 0.5  # Default neutral score
+    
+    def _train_critic(self, initial_responses: List[str], revised_responses: List[str],
+                     critique_scores: List[float]) -> torch.Tensor:
+        """Train the constitutional critic"""
+        
+        # Convert text to embeddings (simplified)
+        initial_embeddings = self._text_to_embeddings(initial_responses)
+        revised_embeddings = self._text_to_embeddings(revised_responses)
+        
+        # Train critic to distinguish between initial and revised responses
+        critic_optimizer = torch.optim.Adam(self.critic.parameters(), lr=1e-4)
+        
+        # Critic should score revised responses higher
+        initial_scores = self.critic(initial_embeddings)['overall_score']
+        revised_scores = self.critic(revised_embeddings)['overall_score']
+        
+        # Loss: revised responses should have higher scores
+        target_scores = torch.tensor(critique_scores, dtype=torch.float32)
+        critic_loss = F.mse_loss(revised_scores.squeeze(), target_scores)
+        
+        # Also ensure initial responses get lower scores
+        ranking_loss = F.relu(initial_scores - revised_scores + 0.1).mean()
+        
+        total_critic_loss = critic_loss + ranking_loss
+        
+        critic_optimizer.zero_grad()
+        total_critic_loss.backward(retain_graph=True)
+        critic_optimizer.step()
+        
+        return total_critic_loss
+    
+    def _train_model_constitutional(self, revised_responses: List[str], contexts: List[str],
+                                  principles: List[ConstitutionalPrinciple],
+                                  optimizer: torch.optim.Optimizer) -> torch.Tensor:
+        """Train model to generate constitutionally aligned responses"""
+        
+        # Convert to model input format (simplified)
+        context_embeddings = self._text_to_embeddings(contexts)
+        response_embeddings = self._text_to_embeddings(revised_responses)
+        
+        # Model should learn to generate responses similar to revised ones
+        # This would be implemented based on the specific model architecture
+        
+        # Simplified: use embedding similarity as proxy for generation quality
+        generated_embeddings = self.model(context_embeddings)
+        
+        # Loss: generated embeddings should be similar to revised response embeddings
+        model_loss = F.mse_loss(generated_embeddings, response_embeddings)
+        
+        return model_loss
+    
+    def _compute_consistency_loss(self, initial_responses: List[str], 
+                                revised_responses: List[str]) -> torch.Tensor:
+        """Compute consistency regularization loss"""
+        
+        # Encourage consistency in the revision process
+        initial_embeddings = self._text_to_embeddings(initial_responses)
+        revised_embeddings = self._text_to_embeddings(revised_responses)
+        
+        # Consistency loss: revisions should not deviate too much from originals
+        consistency_loss = F.mse_loss(initial_embeddings, revised_embeddings)
+        
+        return consistency_loss
+    
+    def _generate_text(self, prompt: str, temperature: float = 0.8) -> str:
+        """Generate text using the model (simplified interface)"""
+        
+        # This would interface with the actual model
+        # For now, returning a placeholder
+        return f"Generated response for: {prompt[:50]}..."
+    
+    def _text_to_embeddings(self, texts: List[str]) -> torch.Tensor:
+        """Convert texts to embeddings (simplified)"""
+        
+        # This would use actual text encoding
+        # For now, returning random embeddings
+        return torch.randn(len(texts), 512)
+    
+    # Principle evaluation methods (simplified implementations)
+    def _evaluate_helpfulness(self, response: str) -> float:
+        """Evaluate helpfulness of response"""
+        
+        helpful_indicators = ['detailed', 'specific', 'step-by-step', 'example', 'because', 'how']
+        response_lower = response.lower()
+        
+        helpful_count = sum(1 for indicator in helpful_indicators if indicator in response_lower)
+        length_bonus = min(1.0, len(response) / 200)  # Longer responses often more helpful
+        
+        return min(1.0, (helpful_count / len(helpful_indicators)) + length_bonus * 0.3)
+    
+    def _evaluate_harmlessness(self, response: str) -> float:
+        """Evaluate harmlessness of response"""
+        
+        harmful_indicators = ['violent', 'dangerous', 'illegal', 'harm', 'kill', 'destroy', 'weapon']
+        response_lower = response.lower()
+        
+        harmful_count = sum(1 for indicator in harmful_indicators if indicator in response_lower)
+        
+        # High score if no harmful content
+        return max(0.0, 1.0 - (harmful_count / 3))
+    
+    def _evaluate_honesty(self, response: str) -> float:
+        """Evaluate honesty and appropriate uncertainty"""
+        
+        uncertainty_phrases = ['uncertain', 'might', 'possibly', 'appears', 'seems', 'likely']
+        overconfident_phrases = ['definitely', 'certainly', 'absolutely', 'always', 'never']
+        
+        response_lower = response.lower()
+        
+        uncertainty_count = sum(1 for phrase in uncertainty_phrases if phrase in response_lower)
+        overconfident_count = sum(1 for phrase in overconfident_phrases if phrase in response_lower)
+        
+        # Good balance of confidence and uncertainty
+        uncertainty_score = min(1.0, uncertainty_count / 2)
+        overconfidence_penalty = min(1.0, overconfident_count / 3)
+        
+        return max(0.0, uncertainty_score + 0.7 - overconfidence_penalty)
+    
+    def _evaluate_privacy_respect(self, response: str) -> float:
+        """Evaluate privacy respect"""
+        
+        privacy_violations = ['personal info', 'address', 'phone number', 'social security', 'password']
+        privacy_respectful = ['private', 'confidential', 'protect', 'secure']
+        
+        response_lower = response.lower()
+        
+        violation_count = sum(1 for violation in privacy_violations if violation in response_lower)
+        respectful_count = sum(1 for respectful in privacy_respectful if respectful in response_lower)
+        
+        return max(0.0, 1.0 - (violation_count / 3) + (respectful_count / 4))
+    
+    def _evaluate_non_discrimination(self, response: str) -> float:
+        """Evaluate non-discrimination"""
+        
+        # Check for problematic generalizations or stereotypes
+        problematic_patterns = [
+            r'all \w+ are',
+            r'\w+ people are naturally',
+            r'\w+ are better at',
+            r'\w+ cannot'
+        ]
+        
+        response_lower = response.lower()
+        problematic_count = 0
+        
+        for pattern in problematic_patterns:
+            if re.search(pattern, response_lower):
+                problematic_count += 1
+        
+        inclusive_terms = ['individual', 'varies', 'diverse', 'different', 'unique']
+        inclusive_count = sum(1 for term in inclusive_terms if term in response_lower)
+        
+        return max(0.0, 1.0 - (problematic_count / len(problematic_patterns)) + (inclusive_count / len(inclusive_terms)))
+    
+    def _evaluate_intellectual_humility(self, response: str) -> float:
+        """Evaluate intellectual humility"""
+        
+        humble_phrases = ['complex', 'multiple perspectives', 'depends', 'context', 'nuanced']
+        arrogant_phrases = ['obviously', 'clearly wrong', 'ridiculous', 'stupid']
+        
+        response_lower = response.lower()
+        
+        humble_count = sum(1 for phrase in humble_phrases if phrase in response_lower)
+        arrogant_count = sum(1 for phrase in arrogant_phrases if phrase in response_lower)
+        
+        return max(0.0, (humble_count / len(humble_phrases)) - (arrogant_count / len(arrogant_phrases)))
+
+class ScientificConstitution(Constitution):
+    """Constitutional AI framework specifically for scientific applications"""
+    
+    def __init__(self):
+        super().__init__()
+        self._add_scientific_principles()
+        self._set_scientific_contexts()
+    
+    def _add_scientific_principles(self):
+        """Add scientific-specific constitutional principles"""
+        
+        scientific_principles = {
+            'scientific_accuracy': ConstitutionalPrinciple(
+                name='scientific_accuracy',
+                description='Ensure scientific claims are accurate, evidence-based, and properly qualified',
+                critique_prompt='Are the scientific claims in this response accurate and properly supported by evidence? Are conclusions appropriately qualified?',
+                revision_prompt='Revise this response to ensure scientific accuracy and proper qualification of claims.',
+                priority=0.95,
+                domain_specific=True,
+                examples=[
+                    {
+                        'scenario': 'Explanation of scientific phenomenon',
+                        'good_response': 'Current evidence suggests X, based on studies Y and Z. However, more research is needed to fully understand...',
+                        'bad_response': 'X is definitively true because of Y.'
+                    }
+                ]
+            ),
+            
+            'methodological_rigor': ConstitutionalPrinciple(
+                name='methodological_rigor',
+                description='Apply appropriate scientific methodologies and acknowledge their limitations',
+                critique_prompt='Does this response demonstrate proper understanding of scientific methodology? Are limitations acknowledged?',
+                revision_prompt='Revise this response to better reflect scientific methodological principles and acknowledge limitations.',
+                priority=0.9,
+                domain_specific=True,
+                examples=[
+                    {
+                        'scenario': 'Research design question',
+                        'good_response': 'For this research question, a randomized controlled trial would be most appropriate, though there are ethical considerations that might require...',
+                        'bad_response': 'Just do any study and the results will be valid.'
+                    }
+                ]
+            ),
+            
+            'citation_integrity': ConstitutionalPrinciple(
+                name='citation_integrity',
+                description='Provide accurate citations and avoid misrepresenting sources',
+                critique_prompt='Are citations accurate and properly representing the source material? Is there any misrepresentation?',
+                revision_prompt='Revise this response to ensure citation accuracy and proper representation of sources.',
+                priority=0.9,
+                domain_specific=True,
+                examples=[
+                    {
+                        'scenario': 'Scientific claim with citation',
+                        'good_response': 'According to Smith et al. (2023), the observed effect was X, though the authors note that Y remains unclear.',
+                        'bad_response': 'Smith et al. proved that X is always true.'
+                    }
+                ]
+            ),
+            
+            'reproducibility': ConstitutionalPrinciple(
+                name='reproducibility',
+                description='Promote reproducible research practices and acknowledge replication issues',
+                critique_prompt='Does this response promote reproducible research practices? Are replication issues appropriately acknowledged?',
+                revision_prompt='Revise this response to better promote reproducibility and acknowledge replication considerations.',
+                priority=0.8,
+                domain_specific=True,
+                examples=[
+                    {
+                        'scenario': 'Research methodology advice',
+                        'good_response': 'To ensure reproducibility, you should preregister your analysis plan, share your code and data, and...',
+                        'bad_response': 'Just run the analysis and report whatever results you get.'
+                    }
+                ]
+            ),
+            
+            'interdisciplinary_respect': ConstitutionalPrinciple(
+                name='interdisciplinary_respect',
+                description='Acknowledge the value of different disciplinary perspectives and avoid disciplinary chauvinism',
+                critique_prompt='Does this response respect different disciplinary perspectives? Does it avoid unfair dismissal of other fields?',
+                revision_prompt='Revise this response to show more respect for interdisciplinary perspectives.',
+                priority=0.7,
+                domain_specific=True,
+                examples=[
+                    {
+                        'scenario': 'Interdisciplinary research question',
+                        'good_response': 'This question benefits from both quantitative and qualitative approaches, each offering unique insights...',
+                        'bad_response': 'Only quantitative methods are scientifically valid.'
+                    }
+                ]
+            ),
+            
+            'ethical_research_practices': ConstitutionalPrinciple(
+                name='ethical_research_practices',
+                description='Promote ethical research practices and consideration of research ethics',
+                critique_prompt='Does this response promote ethical research practices? Are ethical considerations appropriately addressed?',
+                revision_prompt='Revise this response to better address ethical considerations in research.',
+                priority=0.85,
+                domain_specific=True,
+                examples=[
+                    {
+                        'scenario': 'Human subjects research',
+                        'good_response': 'This research would require IRB approval and informed consent procedures to protect participant welfare...',
+                        'bad_response': 'Just collect the data without telling participants what you\'re studying.'
+                    }
+                ]
+            )
+        }
+        
+        # Add scientific principles to constitution
+        for principle_name, principle in scientific_principles.items():
+            self.principles[principle_name] = principle
+    
+    def _set_scientific_contexts(self):
+        """Set context-specific weights for scientific applications"""
+        
+        # Research context
+        self.contextual_weights['research'] = {
+            'scientific_accuracy': 0.95,
+            'methodological_rigor': 0.9,
+            'citation_integrity': 0.9,
+            'reproducibility': 0.8,
+            'honesty': 0.9,
+            'ethical_research_practices': 0.85,
+            'intellectual_humility': 0.8,
+            'interdisciplinary_respect': 0.7,
+            'helpfulness': 0.8,
+            'harmlessness': 0.9
+        }
+        
+        # Education context  
+        self.contextual_weights['education'] = {
+            'scientific_accuracy': 0.9,
+            'helpfulness': 0.9,
+            'honesty': 0.85,
+            'intellectual_humility': 0.8,
+            'methodological_rigor': 0.8,
+            'interdisciplinary_respect': 0.75,
+            'harmlessness': 0.8,
+            'non_discrimination': 0.8
+        }
+        
+        # Public communication context
+        self.contextual_weights['public_communication'] = {
+            'scientific_accuracy': 0.9,
+            'helpfulness': 0.85,
+            'honesty': 0.9,
+            'intellectual_humility': 0.85,
+            'harmlessness': 0.8,
+            'non_discrimination': 0.8,
+            'privacy_respect': 0.7
+        }
+
+class AdvancedConstitutionalMethods:
+    """Advanced Constitutional AI methods and techniques"""
+    
+    def __init__(self, constitution: Constitution):
+        self.constitution = constitution
+        
+    def recursive_constitutional_training(self, model: nn.Module, training_data: List[Dict],
+                                        num_iterations: int = 5) -> nn.Module:
+        """Recursive constitutional training with iterative improvement"""
+        
+        current_model = model
+        
+        for iteration in range(num_iterations):
+            logging.info(f"Constitutional training iteration {iteration + 1}/{num_iterations}")
+            
+            # Generate responses with current model
+            responses = []
+            contexts = []
+            
+            for data_point in training_data:
+                context = data_point['context']
+                response = self._generate_response(current_model, context)
+                
+                responses.append(response)
+                contexts.append(context)
+            
+            # Apply constitutional critique and revision
+            improved_responses = []
+            for response, context in zip(responses, contexts):
+                improved_response = self._constitutional_improvement_cycle(
+                    response, context, num_cycles=3
+                )
+                improved_responses.append(improved_response)
+            
+            # Update model with improved responses
+            current_model = self._update_model_with_improvements(
+                current_model, contexts, improved_responses
+            )
+        
+        return current_model
+    
+    def multi_principle_optimization(self, responses: List[str], contexts: List[str],
+                                   principle_weights: Dict[str, float]) -> List[str]:
+        """Optimize responses for multiple constitutional principles simultaneously"""
+        
+        optimized_responses = []
+        
+        for response, context in zip(responses, contexts):
+            # Get active principles for context
+            active_principles = self.constitution.get_active_principles(context)
+            
+            # Multi-objective optimization
+            best_response = response
+            best_score = self._evaluate_multi_principle_score(response, active_principles, principle_weights)
+            
+            # Generate alternative responses and select best
+            for _ in range(5):  # Generate 5 alternatives
+                alternative = self._generate_principle_guided_alternative(
+                    response, active_principles, principle_weights
+                )
+                
+                alternative_score = self._evaluate_multi_principle_score(
+                    alternative, active_principles, principle_weights
+                )
+                
+                if alternative_score > best_score:
+                    best_response = alternative
+                    best_score = alternative_score
+            
+            optimized_responses.append(best_response)
+        
+        return optimized_responses
+    
+    def constitutional_chain_of_thought(self, query: str, context: str) -> Dict[str, Any]:
+        """Generate response using constitutional chain-of-thought reasoning"""
+        
+        # Step 1: Generate initial response
+        initial_response = self._generate_response_simple(query)
+        
+        # Step 2: Apply constitutional reasoning chain
+        reasoning_chain = []
+        current_response = initial_response
+        
+        active_principles = self.constitution.get_active_principles(context)
+        
+        for principle in active_principles[:3]:  # Top 3 principles
+            # Evaluate current response against principle
+            adherence_score = self._evaluate_principle_adherence_simple(current_response, principle)
+            
+            reasoning_step = {
+                'principle': principle.name,
+                'initial_score': adherence_score,
+                'critique': self._generate_principle_critique(current_response, principle),
+                'revision': None,
+                'final_score': adherence_score
+            }
+            
+            # If adherence is low, revise
+            if adherence_score < 0.7:
+                revised_response = self._revise_for_principle(current_response, principle)
+                final_score = self._evaluate_principle_adherence_simple(revised_response, principle)
+                
+                reasoning_step['revision'] = revised_response
+                reasoning_step['final_score'] = final_score
+                
+                if final_score > adherence_score:
+                    current_response = revised_response
+            
+            reasoning_chain.append(reasoning_step)
+        
+        return {
+            'initial_response': initial_response,
+            'final_response': current_response,
+            'reasoning_chain': reasoning_chain,
+            'principles_applied': [step['principle'] for step in reasoning_chain]
+        }
+    
+    def adaptive_constitution(self, feedback_data: List[Dict[str, Any]]) -> Constitution:
+        """Adapt constitution based on feedback and performance data"""
+        
+        # Analyze feedback to identify principle adjustment needs
+        principle_performance = defaultdict(list)
+        
+        for feedback in feedback_data:
+            principle_name = feedback.get('principle')
+            performance_score = feedback.get('score', 0.5)
+            
+            if principle_name:
+                principle_performance[principle_name].append(performance_score)
+        
+        # Adjust principle priorities based on performance
+        for principle_name, scores in principle_performance.items():
+            if principle_name in self.constitution.principles:
+                avg_performance = np.mean(scores)
+                
+                # If performance is consistently low, increase priority
+                if avg_performance < 0.6:
+                    self.constitution.principles[principle_name].priority *= 1.1
+                # If performance is consistently high, slightly decrease priority
+                elif avg_performance > 0.9:
+                    self.constitution.principles[principle_name].priority *= 0.95
+                
+                # Ensure priority stays within reasonable bounds
+                self.constitution.principles[principle_name].priority = max(
+                    0.1, min(1.0, self.constitution.principles[principle_name].priority)
+                )
+        
+        return self.constitution
+    
+    # Helper methods (simplified implementations)
+    def _generate_response(self, model: nn.Module, context: str) -> str:
+        """Generate response using model"""
+        return f"Generated response for: {context[:50]}..."
+    
+    def _constitutional_improvement_cycle(self, response: str, context: str, num_cycles: int) -> str:
+        """Apply constitutional improvement cycles"""
+        current_response = response
+        
+        for cycle in range(num_cycles):
+            # Critique current response
+            critiques = self._generate_constitutional_critiques(current_response, context)
+            
+            # Revise based on critiques
+            current_response = self._revise_based_on_critiques(current_response, critiques)
+        
+        return current_response
+    
+    def _update_model_with_improvements(self, model: nn.Module, contexts: List[str], 
+                                      improved_responses: List[str]) -> nn.Module:
+        """Update model with improved responses (simplified)"""
+        # This would implement actual model fine-tuning
+        return model
+    
+    def _evaluate_multi_principle_score(self, response: str, principles: List[ConstitutionalPrinciple],
+                                       weights: Dict[str, float]) -> float:
+        """Evaluate response against multiple principles"""
+        total_score = 0.0
+        total_weight = 0.0
+        
+        for principle in principles:
+            weight = weights.get(principle.name, principle.priority)
+            score = self._evaluate_principle_adherence_simple(response, principle)
+            
+            total_score += score * weight
+            total_weight += weight
+        
+        return total_score / total_weight if total_weight > 0 else 0.0
+    
+    def _generate_principle_guided_alternative(self, response: str, principles: List[ConstitutionalPrinciple],
+                                             weights: Dict[str, float]) -> str:
+        """Generate alternative response guided by principles"""
+        # Find the principle with highest weight that needs improvement
+        improvement_targets = []
+        
+        for principle in principles:
+            score = self._evaluate_principle_adherence_simple(response, principle)
+            weight = weights.get(principle.name, principle.priority)
+            
+            if score < 0.8:  # Needs improvement
+                improvement_targets.append((principle, score, weight))
+        
+        if improvement_targets:
+            # Target the highest-weight principle that needs improvement
+            target_principle = max(improvement_targets, key=lambda x: x[2])[0]
+            return self._revise_for_principle(response, target_principle)
+        
+        return response  # No improvement needed
+    
+    def _generate_response_simple(self, query: str) -> str:
+        """Simple response generation (placeholder)"""
+        return f"Response to: {query}"
+    
+    def _evaluate_principle_adherence_simple(self, response: str, principle: ConstitutionalPrinciple) -> float:
+        """Simplified principle adherence evaluation"""
+        # This would use more sophisticated evaluation in practice
+        return random.uniform(0.3, 1.0)
+    
+    def _generate_principle_critique(self, response: str, principle: ConstitutionalPrinciple) -> str:
+        """Generate critique based on principle"""
+        return f"Critique of response regarding {principle.name}: {principle.critique_prompt}"
+    
+    def _revise_for_principle(self, response: str, principle: ConstitutionalPrinciple) -> str:
+        """Revise response to better adhere to principle"""
+        return f"Revised response for {principle.name}: {response[:100]}..."
+    
+    def _generate_constitutional_critiques(self, response: str, context: str) -> List[str]:
+        """Generate constitutional critiques"""
+        principles = self.constitution.get_active_principles(context)
+        critiques = []
+        
+        for principle in principles[:3]:  # Top 3 principles
+            critique = self._generate_principle_critique(response, principle)
+            critiques.append(critique)
+        
+        return critiques
+    
+    def _revise_based_on_critiques(self, response: str, critiques: List[str]) -> str:
+        """Revise response based on critiques"""
+        return f"Revised response addressing critiques: {response[:50]}..."
+
+# Example usage for scientific Constitutional AI
+def create_scientific_constitutional_ai_system():
+    """Create Constitutional AI system for scientific applications"""
+    
+    # Initialize scientific constitution
+    scientific_constitution = ScientificConstitution()
+    
+    # Create model and critic (placeholders)
+    model = nn.Linear(512, 256)  # Placeholder model
+    critic = ConstitutionalCritic(input_dim=512, num_principles=10)
+    
+    # Configuration for scientific applications
+    config = ConstitutionConfig(
+        num_critique_iterations=4,
+        critique_temperature=0.7,
+        revision_temperature=0.8,
+        self_critique_weight=0.8,
+        principle_adherence_weight=0.2,
+        consistency_reward=0.3
+    )
+    
+    # Initialize trainer
+    trainer = ConstitutionalTrainer(model, critic, scientific_constitution, config)
+    
+    # Advanced methods
+    advanced_methods = AdvancedConstitutionalMethods(scientific_constitution)
+    
+    return {
+        'constitution': scientific_constitution,
+        'trainer': trainer,
+        'advanced_methods': advanced_methods,
+        'model': model,
+        'critic': critic
+    }
+
+# Initialize scientific Constitutional AI system
+logging.info("Creating Constitutional AI system for scientific applications")
+constitutional_system = create_scientific_constitutional_ai_system()
+
+# Example constitutional analysis
+example_query = "What is the relationship between climate change and biodiversity loss?"
+example_context = "research"
+
+constitutional_analysis = constitutional_system['advanced_methods'].constitutional_chain_of_thought(
+    example_query, example_context
+)
+
+logging.info("Constitutional AI Analysis Example:")
+logging.info(f"Query: {example_query}")
+logging.info(f"Principles Applied: {constitutional_analysis['principles_applied']}")
+logging.info(f"Initial Response: {constitutional_analysis['initial_response']}")
+logging.info(f"Final Response: {constitutional_analysis['final_response']}")
+```
+
+## Integration with EderSpark Platform
+
+The Constitutional AI methods described in this guide are specifically designed to support EderSpark's mission of responsible AI development for scientific applications:
+
+### Scientific Constitutional Framework
+
+- **Research Ethics Integration**: Constitutional principles that ensure ethical research practices and responsible knowledge sharing
+- **Scientific Rigor**: Principles that promote accuracy, methodological soundness, and appropriate uncertainty acknowledgment
+- **Citation Integrity**: Constitutional rules that prevent citation hallucination and ensure proper attribution
+- **Interdisciplinary Respect**: Principles that promote respectful engagement across different scientific domains
+
+### Freiya Platform Constitutional Implementation
+
+These Constitutional AI methods enable:
+- **Self-Supervised Safety**: AI systems that can critique and improve their own outputs without constant human oversight
+- **Scalable Alignment**: Constitutional principles that scale across millions of scientific documents and queries
+- **Domain-Adaptive Ethics**: Context-aware application of constitutional principles appropriate for different scientific domains
+- **Transparent Decision Making**: Clear reasoning chains that explain how constitutional principles influenced AI outputs
+
+The Constitutional AI framework ensures that EderSpark's AI tools not only provide accurate and helpful scientific information but do so in a manner that consistently upholds the highest standards of research ethics, scientific integrity, and responsible AI development. This approach enables scalable oversight while maintaining the nuanced understanding necessary for complex scientific applications.
