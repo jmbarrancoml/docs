@@ -1,0 +1,1973 @@
+---
+title: "AI Agent Function Calling"
+description: "Comprehensive guide to function calling in AI agents, covering advanced techniques, API integration, dynamic function discovery, and execution patterns for autonomous agent systems."
+---
+
+# AI Agent Function Calling
+
+Function calling represents one of the most sophisticated capabilities of modern AI agents, enabling them to interact dynamically with external systems, APIs, and services through structured, programmatic interfaces. This comprehensive guide explores advanced function calling techniques, from basic API integration to sophisticated dynamic function discovery and execution patterns that enable truly autonomous agent behavior.
+
+## Function Calling Architecture
+
+### Core Function Calling Framework
+
+The foundation of effective function calling lies in a robust architecture that can handle function discovery, validation, execution, and error management across diverse API surfaces and execution contexts.
+
+```python
+from abc import ABC, abstractmethod
+from typing import Any, Dict, List, Optional, Union, Callable, Type
+from dataclasses import dataclass, field
+from enum import Enum
+import json
+import asyncio
+import inspect
+import functools
+from datetime import datetime, timedelta
+import logging
+import aiohttp
+from pydantic import BaseModel, Field, validator
+
+class FunctionType(Enum):
+    """Categories of function types"""
+    API_CALL = "api_call"
+    COMPUTATION = "computation"
+    DATA_PROCESSING = "data_processing"
+    SYSTEM_CONTROL = "system_control"
+    EXTERNAL_SERVICE = "external_service"
+    DATABASE_OPERATION = "database_operation"
+
+class ExecutionMode(Enum):
+    """Function execution modes"""
+    SYNCHRONOUS = "sync"
+    ASYNCHRONOUS = "async"
+    STREAMING = "stream"
+    BATCH = "batch"
+
+@dataclass
+class FunctionParameter:
+    """Represents a function parameter with validation"""
+    name: str
+    type: Type
+    description: str
+    required: bool = True
+    default: Any = None
+    constraints: Dict[str, Any] = field(default_factory=dict)
+    examples: List[Any] = field(default_factory=list)
+    
+    def validate(self, value: Any) -> tuple[bool, str]:
+        """Validate a parameter value"""
+        # Type validation
+        if not isinstance(value, self.type) and value is not None:
+            try:
+                # Attempt type conversion
+                if self.type == int:
+                    value = int(value)
+                elif self.type == float:
+                    value = float(value)
+                elif self.type == str:
+                    value = str(value)
+                elif self.type == bool:
+                    value = bool(value)
+                else:
+                    return False, f"Cannot convert {type(value)} to {self.type}"
+            except (ValueError, TypeError):
+                return False, f"Invalid type: expected {self.type.__name__}, got {type(value).__name__}"
+        
+        # Constraint validation
+        if self.constraints:
+            if 'min' in self.constraints and isinstance(value, (int, float)):
+                if value < self.constraints['min']:
+                    return False, f"Value {value} below minimum {self.constraints['min']}"
+            
+            if 'max' in self.constraints and isinstance(value, (int, float)):
+                if value > self.constraints['max']:
+                    return False, f"Value {value} above maximum {self.constraints['max']}"
+            
+            if 'min_length' in self.constraints and hasattr(value, '__len__'):
+                if len(value) < self.constraints['min_length']:
+                    return False, f"Length {len(value)} below minimum {self.constraints['min_length']}"
+            
+            if 'max_length' in self.constraints and hasattr(value, '__len__'):
+                if len(value) > self.constraints['max_length']:
+                    return False, f"Length {len(value)} above maximum {self.constraints['max_length']}"
+            
+            if 'enum' in self.constraints:
+                if value not in self.constraints['enum']:
+                    return False, f"Value {value} not in allowed values {self.constraints['enum']}"
+            
+            if 'pattern' in self.constraints and isinstance(value, str):
+                import re
+                if not re.match(self.constraints['pattern'], value):
+                    return False, f"Value {value} does not match pattern {self.constraints['pattern']}"
+        
+        return True, ""
+
+@dataclass
+class FunctionResult:
+    """Represents the result of a function call"""
+    success: bool
+    data: Any
+    error: Optional[str] = None
+    execution_time: float = 0.0
+    metadata: Dict[str, Any] = field(default_factory=dict)
+    function_name: str = ""
+    parameters: Dict[str, Any] = field(default_factory=dict)
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert result to dictionary"""
+        return {
+            "success": self.success,
+            "data": self.data,
+            "error": self.error,
+            "execution_time": self.execution_time,
+            "metadata": self.metadata,
+            "function_name": self.function_name,
+            "parameters": self.parameters
+        }
+
+class FunctionCallable(ABC):
+    """Base class for callable functions in agent systems"""
+    
+    def __init__(self, name: str, description: str, function_type: FunctionType):
+        self.name = name
+        self.description = description
+        self.function_type = function_type
+        self.parameters: List[FunctionParameter] = []
+        self.return_type: Type = Any
+        self.execution_mode = ExecutionMode.SYNCHRONOUS
+        self.timeout: Optional[int] = None
+        self.rate_limit: Optional[Dict[str, int]] = None
+        self.retry_policy: Optional[Dict[str, Any]] = None
+        
+        # Execution metrics
+        self.call_count = 0
+        self.success_count = 0
+        self.total_execution_time = 0.0
+        self.last_called = None
+        self.error_history: List[Dict] = []
+    
+    @abstractmethod
+    async def execute(self, **kwargs) -> FunctionResult:
+        """Execute the function with given parameters"""
+        pass
+    
+    def add_parameter(self, parameter: FunctionParameter):
+        """Add a parameter to the function"""
+        self.parameters.append(parameter)
+    
+    def validate_parameters(self, params: Dict[str, Any]) -> tuple[bool, List[str]]:
+        """Validate all parameters"""
+        errors = []
+        
+        # Check required parameters
+        for param in self.parameters:
+            if param.required and param.name not in params:
+                errors.append(f"Missing required parameter: {param.name}")
+            elif param.name in params:
+                is_valid, error_msg = param.validate(params[param.name])
+                if not is_valid:
+                    errors.append(f"Parameter {param.name}: {error_msg}")
+        
+        # Check for unexpected parameters
+        expected_params = {p.name for p in self.parameters}
+        for param_name in params:
+            if param_name not in expected_params:
+                errors.append(f"Unexpected parameter: {param_name}")
+        
+        return len(errors) == 0, errors
+    
+    def get_schema(self) -> Dict[str, Any]:
+        """Get JSON schema for the function"""
+        properties = {}
+        required = []
+        
+        for param in self.parameters:
+            prop_schema = {
+                "type": self._python_type_to_json_type(param.type),
+                "description": param.description
+            }
+            
+            if param.examples:
+                prop_schema["examples"] = param.examples
+            
+            if param.constraints:
+                prop_schema.update(param.constraints)
+            
+            if param.default is not None:
+                prop_schema["default"] = param.default
+            
+            properties[param.name] = prop_schema
+            
+            if param.required:
+                required.append(param.name)
+        
+        return {
+            "name": self.name,
+            "description": self.description,
+            "parameters": {
+                "type": "object",
+                "properties": properties,
+                "required": required
+            },
+            "return_type": self._python_type_to_json_type(self.return_type)
+        }
+    
+    def _python_type_to_json_type(self, python_type: Type) -> str:
+        """Convert Python type to JSON schema type"""
+        type_mapping = {
+            str: "string",
+            int: "integer", 
+            float: "number",
+            bool: "boolean",
+            list: "array",
+            dict: "object",
+            Any: "any"
+        }
+        return type_mapping.get(python_type, "string")
+    
+    async def safe_execute(self, **kwargs) -> FunctionResult:
+        """Execute function with error handling and metrics"""
+        start_time = datetime.now()
+        
+        try:
+            # Validate parameters
+            is_valid, errors = self.validate_parameters(kwargs)
+            if not is_valid:
+                return FunctionResult(
+                    success=False,
+                    data=None,
+                    error=f"Parameter validation failed: {'; '.join(errors)}",
+                    function_name=self.name,
+                    parameters=kwargs
+                )
+            
+            # Apply rate limiting if configured
+            if self.rate_limit:
+                await self._apply_rate_limit()
+            
+            # Execute function
+            if self.timeout:
+                try:
+                    result = await asyncio.wait_for(self.execute(**kwargs), timeout=self.timeout)
+                except asyncio.TimeoutError:
+                    return FunctionResult(
+                        success=False,
+                        data=None,
+                        error=f"Function execution timed out after {self.timeout} seconds",
+                        function_name=self.name,
+                        parameters=kwargs
+                    )
+            else:
+                result = await self.execute(**kwargs)
+            
+            # Update metrics
+            execution_time = (datetime.now() - start_time).total_seconds()
+            result.execution_time = execution_time
+            result.function_name = self.name
+            result.parameters = kwargs
+            
+            self.call_count += 1
+            if result.success:
+                self.success_count += 1
+            else:
+                self.error_history.append({
+                    "timestamp": start_time,
+                    "error": result.error,
+                    "parameters": kwargs
+                })
+            
+            self.total_execution_time += execution_time
+            self.last_called = start_time
+            
+            return result
+            
+        except Exception as e:
+            execution_time = (datetime.now() - start_time).total_seconds()
+            
+            self.call_count += 1
+            self.total_execution_time += execution_time
+            self.last_called = start_time
+            
+            error_info = {
+                "timestamp": start_time,
+                "error": str(e),
+                "parameters": kwargs
+            }
+            self.error_history.append(error_info)
+            
+            return FunctionResult(
+                success=False,
+                data=None,
+                error=f"Execution error: {str(e)}",
+                execution_time=execution_time,
+                function_name=self.name,
+                parameters=kwargs
+            )
+    
+    async def _apply_rate_limit(self):
+        """Apply rate limiting if configured"""
+        if not self.rate_limit:
+            return
+        
+        # Simple rate limiting implementation
+        # In practice, you'd use more sophisticated rate limiting
+        calls_per_minute = self.rate_limit.get("calls_per_minute", 60)
+        if self.call_count > 0 and self.last_called:
+            time_since_last = (datetime.now() - self.last_called).total_seconds()
+            min_interval = 60 / calls_per_minute
+            if time_since_last < min_interval:
+                await asyncio.sleep(min_interval - time_since_last)
+    
+    def get_success_rate(self) -> float:
+        """Get function success rate"""
+        if self.call_count == 0:
+            return 1.0
+        return self.success_count / self.call_count
+    
+    def get_average_execution_time(self) -> float:
+        """Get average execution time"""
+        if self.call_count == 0:
+            return 0.0
+        return self.total_execution_time / self.call_count
+```
+
+### Function Registry and Discovery
+
+A sophisticated function registry enables agents to discover, register, and manage available functions dynamically, supporting both static function registration and runtime discovery.
+
+```python
+class FunctionRegistry:
+    """Registry for managing callable functions"""
+    
+    def __init__(self):
+        self.functions: Dict[str, FunctionCallable] = {}
+        self.categories: Dict[FunctionType, List[str]] = {
+            func_type: [] for func_type in FunctionType
+        }
+        self.tags: Dict[str, List[str]] = {}
+        self.dependencies: Dict[str, List[str]] = {}
+        self._logger = logging.getLogger(__name__)
+    
+    def register_function(self, func: FunctionCallable, tags: List[str] = None) -> bool:
+        """Register a function in the registry"""
+        if func.name in self.functions:
+            self._logger.warning(f"Function {func.name} already registered")
+            return False
+        
+        self.functions[func.name] = func
+        self.categories[func.function_type].append(func.name)
+        
+        if tags:
+            for tag in tags:
+                if tag not in self.tags:
+                    self.tags[tag] = []
+                self.tags[tag].append(func.name)
+        
+        self._logger.info(f"Registered function: {func.name}")
+        return True
+    
+    def get_function(self, name: str) -> Optional[FunctionCallable]:
+        """Retrieve a function by name"""
+        return self.functions.get(name)
+    
+    def search_functions(self, 
+                        query: str = None,
+                        function_type: FunctionType = None,
+                        tags: List[str] = None) -> List[FunctionCallable]:
+        """Search for functions based on criteria"""
+        results = list(self.functions.values())
+        
+        if function_type:
+            results = [f for f in results if f.function_type == function_type]
+        
+        if tags:
+            tag_functions = set()
+            for tag in tags:
+                tag_functions.update(self.tags.get(tag, []))
+            results = [f for f in results if f.name in tag_functions]
+        
+        if query:
+            query_lower = query.lower()
+            results = [
+                f for f in results
+                if query_lower in f.name.lower() or query_lower in f.description.lower()
+            ]
+        
+        return results
+    
+    def get_function_schema(self, name: str) -> Optional[Dict[str, Any]]:
+        """Get schema for a specific function"""
+        func = self.get_function(name)
+        return func.get_schema() if func else None
+    
+    def get_all_schemas(self) -> Dict[str, Dict[str, Any]]:
+        """Get schemas for all registered functions"""
+        return {name: func.get_schema() for name, func in self.functions.items()}
+    
+    def add_dependency(self, function_name: str, dependencies: List[str]):
+        """Add dependencies for a function"""
+        self.dependencies[function_name] = dependencies
+    
+    def resolve_dependencies(self, function_name: str) -> List[str]:
+        """Resolve all dependencies for a function"""
+        resolved = []
+        to_resolve = [function_name]
+        
+        while to_resolve:
+            current = to_resolve.pop(0)
+            if current not in resolved:
+                resolved.append(current)
+                deps = self.dependencies.get(current, [])
+                to_resolve.extend(deps)
+        
+        return resolved[1:]  # Exclude the function itself
+    
+    def get_function_metrics(self) -> Dict[str, Dict[str, Any]]:
+        """Get metrics for all functions"""
+        metrics = {}
+        for name, func in self.functions.items():
+            metrics[name] = {
+                "call_count": func.call_count,
+                "success_rate": func.get_success_rate(),
+                "average_execution_time": func.get_average_execution_time(),
+                "last_called": func.last_called.isoformat() if func.last_called else None,
+                "error_count": len(func.error_history),
+                "function_type": func.function_type.value
+            }
+        return metrics
+
+class DynamicFunctionDiscovery:
+    """System for discovering functions dynamically"""
+    
+    def __init__(self, registry: FunctionRegistry):
+        self.registry = registry
+        self.discovery_sources: List[Callable] = []
+        self.auto_discovery_enabled = False
+        self._logger = logging.getLogger(__name__)
+    
+    def add_discovery_source(self, source: Callable):
+        """Add a source for function discovery"""
+        self.discovery_sources.append(source)
+    
+    async def discover_functions(self, context: Dict[str, Any] = None) -> List[FunctionCallable]:
+        """Discover new functions based on context"""
+        discovered_functions = []
+        
+        for source in self.discovery_sources:
+            try:
+                functions = await source(context or {})
+                if isinstance(functions, list):
+                    discovered_functions.extend(functions)
+                elif isinstance(functions, FunctionCallable):
+                    discovered_functions.append(functions)
+            except Exception as e:
+                self._logger.error(f"Error in discovery source {source}: {e}")
+        
+        # Auto-register discovered functions if enabled
+        if self.auto_discovery_enabled:
+            for func in discovered_functions:
+                self.registry.register_function(func)
+        
+        return discovered_functions
+    
+    async def discover_from_api_spec(self, api_spec: Dict[str, Any]) -> List[FunctionCallable]:
+        """Discover functions from OpenAPI specification"""
+        functions = []
+        
+        if "paths" in api_spec:
+            base_url = api_spec.get("servers", [{}])[0].get("url", "")
+            
+            for path, methods in api_spec["paths"].items():
+                for method, spec in methods.items():
+                    if method.upper() in ["GET", "POST", "PUT", "DELETE", "PATCH"]:
+                        func = await self._create_api_function(
+                            base_url, path, method.upper(), spec
+                        )
+                        if func:
+                            functions.append(func)
+        
+        return functions
+    
+    async def _create_api_function(self, base_url: str, path: str, 
+                                 method: str, spec: Dict[str, Any]) -> Optional[FunctionCallable]:
+        """Create a function callable from API specification"""
+        operation_id = spec.get("operationId", f"{method.lower()}_{path.replace('/', '_')}")
+        description = spec.get("summary", spec.get("description", f"{method} {path}"))
+        
+        # Create API function
+        api_func = APIFunction(
+            name=operation_id,
+            description=description,
+            base_url=base_url,
+            path=path,
+            method=method
+        )
+        
+        # Add parameters from spec
+        if "parameters" in spec:
+            for param_spec in spec["parameters"]:
+                param = FunctionParameter(
+                    name=param_spec["name"],
+                    type=self._json_type_to_python_type(param_spec.get("schema", {}).get("type", "string")),
+                    description=param_spec.get("description", ""),
+                    required=param_spec.get("required", False)
+                )
+                api_func.add_parameter(param)
+        
+        # Add request body parameters
+        if "requestBody" in spec:
+            request_body = spec["requestBody"]
+            content = request_body.get("content", {})
+            
+            for content_type, content_spec in content.items():
+                if "application/json" in content_type:
+                    schema = content_spec.get("schema", {})
+                    if "properties" in schema:
+                        for prop_name, prop_spec in schema["properties"].items():
+                            param = FunctionParameter(
+                                name=prop_name,
+                                type=self._json_type_to_python_type(prop_spec.get("type", "string")),
+                                description=prop_spec.get("description", ""),
+                                required=prop_name in schema.get("required", [])
+                            )
+                            api_func.add_parameter(param)
+                    break
+        
+        return api_func
+    
+    def _json_type_to_python_type(self, json_type: str) -> Type:
+        """Convert JSON schema type to Python type"""
+        type_mapping = {
+            "string": str,
+            "integer": int,
+            "number": float,
+            "boolean": bool,
+            "array": list,
+            "object": dict
+        }
+        return type_mapping.get(json_type, str)
+
+# Global function registry
+function_registry = FunctionRegistry()
+```
+
+## API Integration Functions
+
+### HTTP API Functions
+
+HTTP API integration represents one of the most common function calling patterns, enabling agents to interact with REST APIs, webhooks, and web services.
+
+```python
+class APIFunction(FunctionCallable):
+    """Function for calling HTTP APIs"""
+    
+    def __init__(self, name: str, description: str, base_url: str, 
+                 path: str, method: str = "GET"):
+        super().__init__(name, description, FunctionType.API_CALL)
+        self.base_url = base_url.rstrip('/')
+        self.path = path
+        self.method = method.upper()
+        self.headers: Dict[str, str] = {}
+        self.authentication = None
+        self.timeout = 30
+        
+        # Set execution mode based on method
+        if method.upper() in ["GET", "HEAD"]:
+            self.execution_mode = ExecutionMode.ASYNCHRONOUS
+        else:
+            self.execution_mode = ExecutionMode.ASYNCHRONOUS
+    
+    def set_authentication(self, auth_type: str, credentials: Dict[str, Any]):
+        """Set authentication for the API call"""
+        self.authentication = {
+            "type": auth_type,
+            "credentials": credentials
+        }
+    
+    def set_headers(self, headers: Dict[str, str]):
+        """Set custom headers for the API call"""
+        self.headers.update(headers)
+    
+    async def execute(self, **kwargs) -> FunctionResult:
+        """Execute the API call"""
+        try:
+            # Build URL
+            url = f"{self.base_url}{self.path}"
+            
+            # Replace path parameters
+            for param_name, param_value in kwargs.items():
+                placeholder = f"{{{param_name}}}"
+                if placeholder in url:
+                    url = url.replace(placeholder, str(param_value))
+            
+            # Prepare headers
+            headers = self.headers.copy()
+            if self.authentication:
+                await self._apply_authentication(headers)
+            
+            # Prepare request data
+            query_params = {}
+            json_data = None
+            form_data = None
+            
+            for param in self.parameters:
+                if param.name in kwargs:
+                    value = kwargs[param.name]
+                    
+                    # Skip path parameters (already handled)
+                    if f"{{{param.name}}}" in self.path:
+                        continue
+                    
+                    # Determine parameter location
+                    if self.method in ["GET", "DELETE"]:
+                        query_params[param.name] = value
+                    elif self.method in ["POST", "PUT", "PATCH"]:
+                        if json_data is None:
+                            json_data = {}
+                        json_data[param.name] = value
+            
+            # Make HTTP request
+            async with aiohttp.ClientSession() as session:
+                async with session.request(
+                    method=self.method,
+                    url=url,
+                    params=query_params if query_params else None,
+                    json=json_data if json_data else None,
+                    data=form_data if form_data else None,
+                    headers=headers,
+                    timeout=aiohttp.ClientTimeout(total=self.timeout)
+                ) as response:
+                    
+                    # Get response data
+                    content_type = response.headers.get('content-type', '').lower()
+                    
+                    if 'application/json' in content_type:
+                        response_data = await response.json()
+                    elif 'text/' in content_type:
+                        response_data = await response.text()
+                    else:
+                        response_data = await response.read()
+                    
+                    # Check if request was successful
+                    if 200 <= response.status < 300:
+                        return FunctionResult(
+                            success=True,
+                            data=response_data,
+                            metadata={
+                                "status_code": response.status,
+                                "headers": dict(response.headers),
+                                "url": str(response.url),
+                                "method": self.method
+                            }
+                        )
+                    else:
+                        return FunctionResult(
+                            success=False,
+                            data=response_data,
+                            error=f"HTTP {response.status}: {response.reason}",
+                            metadata={
+                                "status_code": response.status,
+                                "headers": dict(response.headers),
+                                "url": str(response.url),
+                                "method": self.method
+                            }
+                        )
+                        
+        except asyncio.TimeoutError:
+            return FunctionResult(
+                success=False,
+                data=None,
+                error=f"Request timed out after {self.timeout} seconds"
+            )
+        except Exception as e:
+            return FunctionResult(
+                success=False,
+                data=None,
+                error=f"Request failed: {str(e)}"
+            )
+    
+    async def _apply_authentication(self, headers: Dict[str, str]):
+        """Apply authentication to request headers"""
+        if not self.authentication:
+            return
+        
+        auth_type = self.authentication["type"]
+        credentials = self.authentication["credentials"]
+        
+        if auth_type == "bearer":
+            headers["Authorization"] = f"Bearer {credentials['token']}"
+        elif auth_type == "api_key":
+            header_name = credentials.get("header_name", "X-API-Key")
+            headers[header_name] = credentials["key"]
+        elif auth_type == "basic":
+            import base64
+            auth_string = f"{credentials['username']}:{credentials['password']}"
+            auth_bytes = base64.b64encode(auth_string.encode()).decode()
+            headers["Authorization"] = f"Basic {auth_bytes}"
+
+class FreiyaAPIFunction(APIFunction):
+    """Specialized API function for EderSpark's Freiya platform"""
+    
+    def __init__(self, name: str, description: str, endpoint: str, 
+                 api_key: str, workspace_id: str = None):
+        super().__init__(
+            name=name,
+            description=description,
+            base_url="https://api.ederspark.ai/freiya",
+            path=endpoint,
+            method="POST"
+        )
+        
+        self.set_authentication("bearer", {"token": api_key})
+        self.set_headers({
+            "Content-Type": "application/json",
+            "User-Agent": "EderSpark-Agent/1.0"
+        })
+        
+        if workspace_id:
+            self.set_headers({"X-Workspace-ID": workspace_id})
+        
+        # Add common Freiya parameters
+        self.add_parameter(FunctionParameter(
+            name="query",
+            type=str,
+            description="Scientific search query",
+            required=True,
+            examples=["quantum computing", "machine learning in drug discovery"]
+        ))
+        
+        self.add_parameter(FunctionParameter(
+            name="max_results",
+            type=int,
+            description="Maximum number of results to return",
+            required=False,
+            default=20,
+            constraints={"min": 1, "max": 100}
+        ))
+        
+        self.add_parameter(FunctionParameter(
+            name="field_filter",
+            type=str,
+            description="Filter by scientific field",
+            required=False,
+            constraints={"enum": ["physics", "biology", "chemistry", "computer_science", "medicine"]}
+        ))
+        
+        self.add_parameter(FunctionParameter(
+            name="publication_year_range",
+            type=dict,
+            description="Filter by publication year range",
+            required=False
+        ))
+    
+    async def execute(self, **kwargs) -> FunctionResult:
+        """Execute Freiya API call with enhanced processing"""
+        # Call parent execute method
+        result = await super().execute(**kwargs)
+        
+        if result.success and isinstance(result.data, dict):
+            # Enhance Freiya response with additional processing
+            enhanced_data = await self._enhance_freiya_response(result.data)
+            result.data = enhanced_data
+        
+        return result
+    
+    async def _enhance_freiya_response(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        """Enhance Freiya API response with additional insights"""
+        enhanced = data.copy()
+        
+        # Add semantic analysis if papers are present
+        if "papers" in data and data["papers"]:
+            papers = data["papers"]
+            
+            # Calculate research metrics
+            total_citations = sum(paper.get("citation_count", 0) for paper in papers)
+            avg_citations = total_citations / len(papers) if papers else 0
+            
+            # Identify research trends
+            publication_years = [paper.get("publication_year", 2000) for paper in papers]
+            recent_papers = [year for year in publication_years if year >= 2020]
+            
+            # Add enhancement metadata
+            enhanced["analysis"] = {
+                "total_papers": len(papers),
+                "total_citations": total_citations,
+                "average_citations": round(avg_citations, 2),
+                "recent_research_ratio": len(recent_papers) / len(papers) if papers else 0,
+                "research_velocity": "high" if len(recent_papers) > len(papers) * 0.4 else "moderate",
+                "top_cited_paper": max(papers, key=lambda p: p.get("citation_count", 0)) if papers else None
+            }
+            
+            # Extract key topics
+            all_keywords = []
+            for paper in papers:
+                if "keywords" in paper:
+                    all_keywords.extend(paper["keywords"])
+            
+            # Count keyword frequency
+            keyword_freq = {}
+            for keyword in all_keywords:
+                keyword_freq[keyword] = keyword_freq.get(keyword, 0) + 1
+            
+            # Get top topics
+            top_topics = sorted(keyword_freq.items(), key=lambda x: x[1], reverse=True)[:10]
+            enhanced["topics"] = {
+                "top_keywords": [topic[0] for topic in top_topics],
+                "keyword_frequency": dict(top_topics)
+            }
+        
+        return enhanced
+
+class BatchAPIFunction(FunctionCallable):
+    """Function for batch API operations"""
+    
+    def __init__(self, name: str, description: str, base_function: APIFunction):
+        super().__init__(name, description, FunctionType.API_CALL)
+        self.base_function = base_function
+        self.execution_mode = ExecutionMode.BATCH
+        self.batch_size = 10
+        self.concurrent_requests = 3
+        
+        # Add batch-specific parameters
+        self.add_parameter(FunctionParameter(
+            name="items",
+            type=list,
+            description="List of items to process in batch",
+            required=True
+        ))
+        
+        self.add_parameter(FunctionParameter(
+            name="batch_size",
+            type=int,
+            description="Number of items to process per batch",
+            required=False,
+            default=10,
+            constraints={"min": 1, "max": 100}
+        ))
+    
+    async def execute(self, items: List[Dict[str, Any]], batch_size: int = None) -> FunctionResult:
+        """Execute batch API calls"""
+        if batch_size:
+            self.batch_size = batch_size
+        
+        try:
+            results = []
+            errors = []
+            
+            # Process items in batches
+            for i in range(0, len(items), self.batch_size):
+                batch = items[i:i + self.batch_size]
+                
+                # Create concurrent tasks for batch
+                tasks = []
+                for item in batch:
+                    task = self.base_function.safe_execute(**item)
+                    tasks.append(task)
+                
+                # Execute batch with concurrency limit
+                batch_results = []
+                for j in range(0, len(tasks), self.concurrent_requests):
+                    concurrent_batch = tasks[j:j + self.concurrent_requests]
+                    batch_results.extend(await asyncio.gather(*concurrent_batch, return_exceptions=True))
+                
+                # Process batch results
+                for k, result in enumerate(batch_results):
+                    if isinstance(result, Exception):
+                        errors.append({
+                            "item_index": i + k,
+                            "item": batch[k],
+                            "error": str(result)
+                        })
+                    elif isinstance(result, FunctionResult):
+                        if result.success:
+                            results.append({
+                                "item_index": i + k,
+                                "item": batch[k],
+                                "result": result.data,
+                                "metadata": result.metadata
+                            })
+                        else:
+                            errors.append({
+                                "item_index": i + k,
+                                "item": batch[k],
+                                "error": result.error
+                            })
+            
+            # Determine overall success
+            success = len(errors) == 0
+            
+            return FunctionResult(
+                success=success,
+                data={
+                    "successful_results": results,
+                    "failed_results": errors,
+                    "total_processed": len(items),
+                    "success_count": len(results),
+                    "error_count": len(errors),
+                    "success_rate": len(results) / len(items) if items else 1.0
+                },
+                metadata={
+                    "batch_size": self.batch_size,
+                    "concurrent_requests": self.concurrent_requests,
+                    "total_batches": (len(items) + self.batch_size - 1) // self.batch_size
+                }
+            )
+            
+        except Exception as e:
+            return FunctionResult(
+                success=False,
+                data=None,
+                error=f"Batch execution error: {str(e)}"
+            )
+```
+
+## Advanced Function Execution Patterns
+
+### Streaming Function Calls
+
+Streaming function calls enable real-time data processing and response handling, particularly useful for long-running operations or real-time data feeds.
+
+```python
+class StreamingFunction(FunctionCallable):
+    """Function that supports streaming execution"""
+    
+    def __init__(self, name: str, description: str, stream_source: Callable):
+        super().__init__(name, description, FunctionType.EXTERNAL_SERVICE)
+        self.execution_mode = ExecutionMode.STREAMING
+        self.stream_source = stream_source
+        self.stream_handlers: List[Callable] = []
+        self.buffer_size = 1000
+        self.stream_timeout = 300  # 5 minutes default
+        
+        self.add_parameter(FunctionParameter(
+            name="stream_duration",
+            type=int,
+            description="Duration to stream data (seconds)",
+            required=False,
+            default=60,
+            constraints={"min": 1, "max": 3600}
+        ))
+        
+        self.add_parameter(FunctionParameter(
+            name="filter_criteria",
+            type=dict,
+            description="Criteria for filtering stream data",
+            required=False,
+            default={}
+        ))
+    
+    def add_stream_handler(self, handler: Callable):
+        """Add a handler for processing stream data"""
+        self.stream_handlers.append(handler)
+    
+    async def execute(self, stream_duration: int = 60, 
+                     filter_criteria: dict = None) -> FunctionResult:
+        """Execute streaming function"""
+        filter_criteria = filter_criteria or {}
+        collected_data = []
+        processed_count = 0
+        error_count = 0
+        
+        try:
+            start_time = datetime.now()
+            end_time = start_time + timedelta(seconds=stream_duration)
+            
+            async for data_chunk in self._stream_data(filter_criteria):
+                current_time = datetime.now()
+                if current_time >= end_time:
+                    break
+                
+                try:
+                    # Apply filters
+                    if self._should_include_data(data_chunk, filter_criteria):
+                        # Process through handlers
+                        processed_chunk = data_chunk
+                        for handler in self.stream_handlers:
+                            processed_chunk = await handler(processed_chunk)
+                        
+                        collected_data.append(processed_chunk)
+                        processed_count += 1
+                        
+                        # Manage buffer size
+                        if len(collected_data) > self.buffer_size:
+                            # Remove oldest data to maintain buffer size
+                            collected_data = collected_data[-self.buffer_size:]
+                
+                except Exception as e:
+                    error_count += 1
+                    logging.warning(f"Error processing stream chunk: {e}")
+            
+            execution_time = (datetime.now() - start_time).total_seconds()
+            
+            return FunctionResult(
+                success=True,
+                data=collected_data,
+                metadata={
+                    "stream_duration": execution_time,
+                    "processed_count": processed_count,
+                    "error_count": error_count,
+                    "data_rate": processed_count / execution_time if execution_time > 0 else 0,
+                    "buffer_size": len(collected_data)
+                }
+            )
+            
+        except Exception as e:
+            return FunctionResult(
+                success=False,
+                data=collected_data,  # Return partial data
+                error=f"Streaming error: {str(e)}",
+                metadata={
+                    "partial_data_count": len(collected_data),
+                    "processed_count": processed_count,
+                    "error_count": error_count
+                }
+            )
+    
+    async def _stream_data(self, filter_criteria: dict):
+        """Generate stream data"""
+        try:
+            async for chunk in self.stream_source(filter_criteria):
+                yield chunk
+        except Exception as e:
+            raise Exception(f"Stream source error: {e}")
+    
+    def _should_include_data(self, data: Any, criteria: dict) -> bool:
+        """Check if data should be included based on filter criteria"""
+        if not criteria:
+            return True
+        
+        # Simple filtering implementation
+        for key, expected_value in criteria.items():
+            if hasattr(data, key):
+                actual_value = getattr(data, key)
+                if actual_value != expected_value:
+                    return False
+            elif isinstance(data, dict) and key in data:
+                if data[key] != expected_value:
+                    return False
+        
+        return True
+
+class ConditionalFunction(FunctionCallable):
+    """Function that executes conditionally based on runtime conditions"""
+    
+    def __init__(self, name: str, description: str):
+        super().__init__(name, description, FunctionType.SYSTEM_CONTROL)
+        self.conditions: List[Callable] = []
+        self.conditional_functions: Dict[str, FunctionCallable] = {}
+        self.default_function: Optional[FunctionCallable] = None
+        
+        self.add_parameter(FunctionParameter(
+            name="condition_context",
+            type=dict,
+            description="Context data for evaluating conditions",
+            required=False,
+            default={}
+        ))
+    
+    def add_condition(self, condition_name: str, condition_func: Callable, 
+                     target_function: FunctionCallable):
+        """Add a condition and associated function"""
+        self.conditions.append((condition_name, condition_func))
+        self.conditional_functions[condition_name] = target_function
+    
+    def set_default_function(self, func: FunctionCallable):
+        """Set the default function to execute if no conditions match"""
+        self.default_function = func
+    
+    async def execute(self, condition_context: dict = None, **kwargs) -> FunctionResult:
+        """Execute function based on evaluated conditions"""
+        context = condition_context or {}
+        
+        try:
+            # Evaluate conditions in order
+            for condition_name, condition_func in self.conditions:
+                try:
+                    if await self._evaluate_condition(condition_func, context, kwargs):
+                        target_function = self.conditional_functions[condition_name]
+                        result = await target_function.safe_execute(**kwargs)
+                        
+                        # Add condition metadata
+                        if not result.metadata:
+                            result.metadata = {}
+                        result.metadata["executed_condition"] = condition_name
+                        result.metadata["condition_evaluation"] = True
+                        
+                        return result
+                except Exception as e:
+                    logging.warning(f"Error evaluating condition {condition_name}: {e}")
+                    continue
+            
+            # No conditions matched, use default function
+            if self.default_function:
+                result = await self.default_function.safe_execute(**kwargs)
+                if not result.metadata:
+                    result.metadata = {}
+                result.metadata["executed_condition"] = "default"
+                result.metadata["condition_evaluation"] = False
+                return result
+            
+            # No default function available
+            return FunctionResult(
+                success=False,
+                data=None,
+                error="No matching conditions and no default function available",
+                metadata={
+                    "evaluated_conditions": len(self.conditions),
+                    "condition_evaluation": False
+                }
+            )
+            
+        except Exception as e:
+            return FunctionResult(
+                success=False,
+                data=None,
+                error=f"Conditional execution error: {str(e)}"
+            )
+    
+    async def _evaluate_condition(self, condition_func: Callable, 
+                                context: dict, kwargs: dict) -> bool:
+        """Evaluate a single condition"""
+        if inspect.iscoroutinefunction(condition_func):
+            return await condition_func(context, kwargs)
+        else:
+            return condition_func(context, kwargs)
+
+class ChainedFunction(FunctionCallable):
+    """Function that chains multiple functions together"""
+    
+    def __init__(self, name: str, description: str, functions: List[FunctionCallable]):
+        super().__init__(name, description, FunctionType.SYSTEM_CONTROL)
+        self.functions = functions
+        self.chain_strategy = "sequential"  # sequential, parallel, conditional
+        self.error_strategy = "stop"  # stop, continue, retry
+        self.max_retries = 3
+        
+        self.add_parameter(FunctionParameter(
+            name="chain_input",
+            type=dict,
+            description="Initial input for the function chain",
+            required=True
+        ))
+        
+        self.add_parameter(FunctionParameter(
+            name="chain_config",
+            type=dict,
+            description="Configuration for chain execution",
+            required=False,
+            default={}
+        ))
+    
+    async def execute(self, chain_input: dict, chain_config: dict = None) -> FunctionResult:
+        """Execute chained functions"""
+        config = chain_config or {}
+        current_data = chain_input
+        chain_results = []
+        
+        try:
+            if self.chain_strategy == "sequential":
+                return await self._execute_sequential(current_data, config)
+            elif self.chain_strategy == "parallel":
+                return await self._execute_parallel(current_data, config)
+            elif self.chain_strategy == "conditional":
+                return await self._execute_conditional(current_data, config)
+            else:
+                raise ValueError(f"Unknown chain strategy: {self.chain_strategy}")
+                
+        except Exception as e:
+            return FunctionResult(
+                success=False,
+                data={"partial_results": chain_results},
+                error=f"Chain execution error: {str(e)}"
+            )
+    
+    async def _execute_sequential(self, initial_data: dict, config: dict) -> FunctionResult:
+        """Execute functions sequentially"""
+        current_data = initial_data
+        results = []
+        
+        for i, func in enumerate(self.functions):
+            try:
+                # Transform data for current function
+                func_input = await self._transform_data_for_function(current_data, func, i)
+                
+                # Execute function with retry logic
+                result = await self._execute_with_retry(func, func_input)
+                results.append(result)
+                
+                if not result.success:
+                    if self.error_strategy == "stop":
+                        return FunctionResult(
+                            success=False,
+                            data={"results": results},
+                            error=f"Chain stopped at function {i}: {result.error}"
+                        )
+                    elif self.error_strategy == "continue":
+                        continue
+                
+                # Prepare data for next function
+                current_data = await self._transform_output_for_next(result, current_data, i)
+                
+            except Exception as e:
+                if self.error_strategy == "stop":
+                    return FunctionResult(
+                        success=False,
+                        data={"results": results},
+                        error=f"Chain failed at function {i}: {str(e)}"
+                    )
+        
+        return FunctionResult(
+            success=True,
+            data={
+                "results": results,
+                "final_output": current_data,
+                "chain_length": len(self.functions)
+            },
+            metadata={
+                "execution_strategy": "sequential",
+                "successful_functions": len([r for r in results if r.success]),
+                "total_execution_time": sum(r.execution_time for r in results)
+            }
+        )
+    
+    async def _execute_with_retry(self, func: FunctionCallable, 
+                                func_input: dict) -> FunctionResult:
+        """Execute function with retry logic"""
+        for attempt in range(self.max_retries + 1):
+            result = await func.safe_execute(**func_input)
+            
+            if result.success or attempt == self.max_retries:
+                if not result.metadata:
+                    result.metadata = {}
+                result.metadata["retry_attempts"] = attempt
+                return result
+            
+            # Wait before retry (exponential backoff)
+            if attempt < self.max_retries:
+                wait_time = 2 ** attempt
+                await asyncio.sleep(wait_time)
+        
+        return result
+    
+    async def _transform_data_for_function(self, data: dict, 
+                                         func: FunctionCallable, 
+                                         index: int) -> dict:
+        """Transform data to match function's expected parameters"""
+        # Get function's required parameters
+        func_schema = func.get_schema()
+        required_params = func_schema.get("parameters", {}).get("required", [])
+        all_params = list(func_schema.get("parameters", {}).get("properties", {}).keys())
+        
+        transformed = {}
+        
+        # Try to map data to function parameters
+        for param_name in all_params:
+            if param_name in data:
+                transformed[param_name] = data[param_name]
+            elif index > 0 and "result" in data:
+                # Try to use previous function's result
+                result_data = data["result"]
+                if isinstance(result_data, dict) and param_name in result_data:
+                    transformed[param_name] = result_data[param_name]
+            elif index > 0 and param_name == "data":
+                # Use previous result as generic data
+                transformed[param_name] = data.get("result", data)
+        
+        # Ensure required parameters are present
+        for param_name in required_params:
+            if param_name not in transformed:
+                # Try some common mappings
+                if param_name == "query" and "search_query" in data:
+                    transformed[param_name] = data["search_query"]
+                elif param_name == "text" and "content" in data:
+                    transformed[param_name] = data["content"]
+        
+        return transformed
+    
+    async def _transform_output_for_next(self, result: FunctionResult, 
+                                       current_data: dict, index: int) -> dict:
+        """Transform function output for next function in chain"""
+        new_data = current_data.copy()
+        
+        # Add result to data flow
+        new_data["result"] = result.data
+        new_data["metadata"] = result.metadata
+        new_data[f"step_{index}_result"] = result.data
+        
+        # If result is a dict, merge it into the data flow
+        if isinstance(result.data, dict):
+            new_data.update(result.data)
+        
+        return new_data
+
+# Example usage and demonstrations
+async def setup_function_calling_system():
+    """Setup a comprehensive function calling system"""
+    
+    # Create registry and discovery system
+    registry = FunctionRegistry()
+    discovery = DynamicFunctionDiscovery(registry)
+    
+    # Create various function types
+    
+    # 1. Simple API function
+    weather_api = APIFunction(
+        name="get_weather",
+        description="Get current weather information for a location",
+        base_url="https://api.weather.com",
+        path="/current/{location}",
+        method="GET"
+    )
+    weather_api.add_parameter(FunctionParameter(
+        name="location",
+        type=str,
+        description="Location to get weather for",
+        required=True,
+        examples=["London", "New York", "Tokyo"]
+    ))
+    
+    # 2. Freiya scientific search
+    freiya_search = FreiyaAPIFunction(
+        name="search_papers",
+        description="Search scientific papers using Freiya",
+        endpoint="/search",
+        api_key="demo_api_key",
+        workspace_id="research_workspace"
+    )
+    
+    # 3. Streaming function for real-time data
+    async def mock_data_stream(filter_criteria):
+        """Mock streaming data source"""
+        for i in range(100):
+            yield {
+                "id": i,
+                "timestamp": datetime.now().isoformat(),
+                "data": f"Stream data point {i}",
+                "value": i * 1.5
+            }
+            await asyncio.sleep(0.1)  # Simulate real-time data
+    
+    stream_function = StreamingFunction(
+        name="stream_data",
+        description="Stream real-time data with filtering",
+        stream_source=mock_data_stream
+    )
+    
+    # 4. Conditional function
+    conditional_func = ConditionalFunction(
+        name="adaptive_search",
+        description="Search using different methods based on query type"
+    )
+    
+    # Add conditions
+    async def is_scientific_query(context, kwargs):
+        query = kwargs.get("query", "")
+        scientific_terms = ["research", "study", "analysis", "experiment", "theory"]
+        return any(term in query.lower() for term in scientific_terms)
+    
+    async def is_weather_query(context, kwargs):
+        query = kwargs.get("query", "")
+        weather_terms = ["weather", "temperature", "rain", "sunny", "cloudy"]
+        return any(term in query.lower() for term in weather_terms)
+    
+    conditional_func.add_condition("scientific", is_scientific_query, freiya_search)
+    conditional_func.add_condition("weather", is_weather_query, weather_api)
+    conditional_func.set_default_function(freiya_search)
+    
+    # 5. Chained function for complex workflows
+    chained_func = ChainedFunction(
+        name="research_workflow",
+        description="Execute a complete research workflow",
+        functions=[freiya_search, stream_function]
+    )
+    
+    # Register all functions
+    functions_to_register = [
+        (weather_api, ["weather", "api"]),
+        (freiya_search, ["search", "scientific", "research"]),
+        (stream_function, ["streaming", "realtime"]),
+        (conditional_func, ["adaptive", "conditional"]),
+        (chained_func, ["workflow", "complex"])
+    ]
+    
+    for func, tags in functions_to_register:
+        registry.register_function(func, tags)
+    
+    return registry, discovery
+
+async def demonstrate_function_calling():
+    """Demonstrate the function calling system"""
+    print("Setting up function calling system...")
+    registry, discovery = await setup_function_calling_system()
+    
+    print(f"\nRegistered {len(registry.functions)} functions:")
+    for name, func in registry.functions.items():
+        print(f"- {name}: {func.description}")
+    
+    # Demonstrate function search
+    print("\n" + "="*50)
+    print("FUNCTION SEARCH DEMONSTRATION")
+    print("="*50)
+    
+    search_results = registry.search_functions(query="search")
+    print(f"\nFunctions containing 'search': {[f.name for f in search_results]}")
+    
+    scientific_functions = registry.search_functions(tags=["scientific"])
+    print(f"Scientific functions: {[f.name for f in scientific_functions]}")
+    
+    # Demonstrate function execution
+    print("\n" + "="*50)
+    print("FUNCTION EXECUTION DEMONSTRATION")
+    print("="*50)
+    
+    # Execute Freiya search
+    freiya_func = registry.get_function("search_papers")
+    if freiya_func:
+        print("\nExecuting Freiya search...")
+        result = await freiya_func.safe_execute(
+            query="machine learning in drug discovery",
+            max_results=10,
+            field_filter="biology"
+        )
+        
+        if result.success:
+            print(f"✓ Search successful!")
+            print(f"  Found {len(result.data.get('papers', []))} papers")
+            print(f"  Execution time: {result.execution_time:.2f}s")
+            if "analysis" in result.data:
+                analysis = result.data["analysis"]
+                print(f"  Total citations: {analysis['total_citations']}")
+                print(f"  Average citations: {analysis['average_citations']}")
+        else:
+            print(f"✗ Search failed: {result.error}")
+    
+    # Demonstrate conditional function
+    print("\nExecuting conditional function...")
+    conditional_func = registry.get_function("adaptive_search")
+    if conditional_func:
+        # Scientific query
+        result1 = await conditional_func.safe_execute(
+            query="quantum computing research advances",
+            condition_context={}
+        )
+        print(f"Scientific query condition: {result1.metadata.get('executed_condition', 'unknown')}")
+        
+        # Weather query
+        result2 = await conditional_func.safe_execute(
+            query="weather in London today",
+            condition_context={}
+        )
+        print(f"Weather query condition: {result2.metadata.get('executed_condition', 'unknown')}")
+    
+    # Demonstrate streaming function
+    print("\nExecuting streaming function (5 seconds)...")
+    stream_func = registry.get_function("stream_data")
+    if stream_func:
+        result = await stream_func.safe_execute(
+            stream_duration=5,
+            filter_criteria={"value_threshold": 10}
+        )
+        
+        if result.success:
+            print(f"✓ Streaming completed!")
+            print(f"  Collected {len(result.data)} data points")
+            print(f"  Processing rate: {result.metadata.get('data_rate', 0):.1f} items/second")
+        else:
+            print(f"✗ Streaming failed: {result.error}")
+    
+    # Show function metrics
+    print("\n" + "="*50)
+    print("FUNCTION METRICS")
+    print("="*50)
+    
+    metrics = registry.get_function_metrics()
+    for func_name, func_metrics in metrics.items():
+        print(f"\n{func_name}:")
+        print(f"  Calls: {func_metrics['call_count']}")
+        print(f"  Success rate: {func_metrics['success_rate']:.2%}")
+        print(f"  Avg execution time: {func_metrics['average_execution_time']:.3f}s")
+        if func_metrics['last_called']:
+            print(f"  Last called: {func_metrics['last_called']}")
+
+if __name__ == "__main__":
+    asyncio.run(demonstrate_function_calling())
+```
+
+## Scientific Function Integration
+
+### EderSpark Platform Functions
+
+The integration with EderSpark's Freiya platform demonstrates sophisticated function calling patterns for scientific research applications, showcasing advanced parameter handling, result processing, and domain-specific optimizations.
+
+```python
+class ScientificFunctionSuite:
+    """Comprehensive suite of scientific functions for EderSpark integration"""
+    
+    def __init__(self, api_key: str, workspace_id: str = None):
+        self.api_key = api_key
+        self.workspace_id = workspace_id
+        self.registry = FunctionRegistry()
+        self.research_cache = {}
+        self._setup_scientific_functions()
+    
+    def _setup_scientific_functions(self):
+        """Setup specialized scientific functions"""
+        
+        # Advanced search with semantic analysis
+        semantic_search = SemanticSearchFunction(self.api_key, self.workspace_id)
+        
+        # Citation network analysis
+        citation_analysis = CitationAnalysisFunction(self.api_key, self.workspace_id)
+        
+        # Research collaboration discovery
+        collaboration_discovery = CollaborationDiscoveryFunction(self.api_key, self.workspace_id)
+        
+        # Trend analysis function
+        trend_analysis = ResearchTrendAnalysisFunction(self.api_key, self.workspace_id)
+        
+        # Research gap identification
+        gap_analysis = ResearchGapAnalysisFunction(self.api_key, self.workspace_id)
+        
+        # Literature synthesis
+        literature_synthesis = LiteratureSynthesisFunction(self.api_key, self.workspace_id)
+        
+        # Register all scientific functions
+        scientific_functions = [
+            (semantic_search, ["search", "semantic", "research"]),
+            (citation_analysis, ["citation", "network", "analysis"]),
+            (collaboration_discovery, ["collaboration", "researchers", "network"]),
+            (trend_analysis, ["trends", "analysis", "temporal"]),
+            (gap_analysis, ["gaps", "research", "opportunities"]),
+            (literature_synthesis, ["synthesis", "review", "summarization"])
+        ]
+        
+        for func, tags in scientific_functions:
+            self.registry.register_function(func, tags)
+    
+    async def conduct_comprehensive_research(self, research_topic: str, 
+                                           scope: str = "comprehensive") -> Dict[str, Any]:
+        """Conduct comprehensive research using multiple scientific functions"""
+        
+        # Create research workflow
+        workflow_functions = [
+            "semantic_search_advanced",
+            "citation_network_analysis",
+            "research_trend_analysis",
+            "research_gap_analysis",
+            "literature_synthesis"
+        ]
+        
+        research_results = {}
+        
+        # Execute research workflow
+        for func_name in workflow_functions:
+            func = self.registry.get_function(func_name)
+            if func:
+                print(f"Executing {func_name}...")
+                
+                # Prepare function-specific parameters
+                params = self._prepare_function_params(func_name, research_topic, scope)
+                
+                result = await func.safe_execute(**params)
+                research_results[func_name] = result
+                
+                # Check for critical failures
+                if not result.success and func_name == "semantic_search_advanced":
+                    # If search fails, abort workflow
+                    break
+        
+        # Synthesize comprehensive research report
+        comprehensive_report = await self._synthesize_research_report(
+            research_topic, research_results
+        )
+        
+        return comprehensive_report
+    
+    def _prepare_function_params(self, func_name: str, topic: str, scope: str) -> Dict[str, Any]:
+        """Prepare parameters for specific research functions"""
+        base_params = {
+            "query": topic,
+            "scope": scope
+        }
+        
+        if func_name == "semantic_search_advanced":
+            return {
+                **base_params,
+                "max_results": 50 if scope == "comprehensive" else 20,
+                "include_semantic_analysis": True,
+                "include_citation_context": True
+            }
+        elif func_name == "citation_network_analysis":
+            return {
+                **base_params,
+                "analysis_depth": "comprehensive" if scope == "comprehensive" else "standard",
+                "include_influence_metrics": True
+            }
+        elif func_name == "research_trend_analysis":
+            return {
+                **base_params,
+                "time_range": {"start": "2019-01-01", "end": "2024-12-31"},
+                "trend_granularity": "monthly" if scope == "comprehensive" else "yearly"
+            }
+        elif func_name == "research_gap_analysis":
+            return {
+                **base_params,
+                "gap_types": ["methodological", "empirical", "theoretical"],
+                "opportunity_scoring": True
+            }
+        elif func_name == "literature_synthesis":
+            return {
+                **base_params,
+                "synthesis_type": "comprehensive" if scope == "comprehensive" else "summary",
+                "include_meta_analysis": scope == "comprehensive"
+            }
+        
+        return base_params
+    
+    async def _synthesize_research_report(self, topic: str, 
+                                        results: Dict[str, FunctionResult]) -> Dict[str, Any]:
+        """Synthesize comprehensive research report from function results"""
+        
+        report = {
+            "research_topic": topic,
+            "synthesis_date": datetime.now().isoformat(),
+            "methodology": "AI-assisted systematic research using EderSpark Freiya platform",
+            "executive_summary": "",
+            "key_findings": [],
+            "literature_overview": {},
+            "research_landscape": {},
+            "trends_and_patterns": {},
+            "research_gaps": [],
+            "future_directions": [],
+            "methodological_insights": {},
+            "confidence_assessment": {},
+            "recommendations": [],
+            "raw_analysis_results": {}
+        }
+        
+        # Process search results
+        search_result = results.get("semantic_search_advanced")
+        if search_result and search_result.success:
+            search_data = search_result.data
+            report["literature_overview"] = {
+                "total_papers_analyzed": len(search_data.get("papers", [])),
+                "primary_sources": search_data.get("papers", [])[:10],  # Top 10
+                "semantic_clusters": search_data.get("semantic_insights", {}),
+                "search_quality": search_data.get("search_quality", "unknown")
+            }
+            report["raw_analysis_results"]["search"] = search_data
+        
+        # Process citation analysis
+        citation_result = results.get("citation_network_analysis")
+        if citation_result and citation_result.success:
+            citation_data = citation_result.data
+            report["research_landscape"] = {
+                "citation_network_size": citation_data.get("network_size", 0),
+                "key_influential_papers": citation_data.get("influential_papers", []),
+                "research_communities": citation_data.get("research_communities", []),
+                "collaboration_patterns": citation_data.get("collaboration_patterns", {})
+            }
+            report["raw_analysis_results"]["citations"] = citation_data
+        
+        # Process trend analysis
+        trend_result = results.get("research_trend_analysis")
+        if trend_result and trend_result.success:
+            trend_data = trend_result.data
+            report["trends_and_patterns"] = {
+                "publication_trends": trend_data.get("publication_trends", {}),
+                "emerging_topics": trend_data.get("emerging_topics", []),
+                "declining_areas": trend_data.get("declining_areas", []),
+                "research_velocity": trend_data.get("research_velocity", "unknown")
+            }
+            report["raw_analysis_results"]["trends"] = trend_data
+        
+        # Process gap analysis
+        gap_result = results.get("research_gap_analysis")
+        if gap_result and gap_result.success:
+            gap_data = gap_result.data
+            report["research_gaps"] = gap_data.get("identified_gaps", [])
+            report["future_directions"] = gap_data.get("future_opportunities", [])
+            report["raw_analysis_results"]["gaps"] = gap_data
+        
+        # Process synthesis
+        synthesis_result = results.get("literature_synthesis")
+        if synthesis_result and synthesis_result.success:
+            synthesis_data = synthesis_result.data
+            report["executive_summary"] = synthesis_data.get("executive_summary", "")
+            report["key_findings"] = synthesis_data.get("key_findings", [])
+            report["methodological_insights"] = synthesis_data.get("methodological_insights", {})
+            report["recommendations"] = synthesis_data.get("recommendations", [])
+            report["raw_analysis_results"]["synthesis"] = synthesis_data
+        
+        # Calculate confidence assessment
+        report["confidence_assessment"] = await self._calculate_confidence_assessment(results)
+        
+        return report
+    
+    async def _calculate_confidence_assessment(self, results: Dict[str, FunctionResult]) -> Dict[str, Any]:
+        """Calculate confidence assessment for the research report"""
+        
+        assessment = {
+            "overall_confidence": "medium",
+            "data_quality_score": 0.0,
+            "completeness_score": 0.0,
+            "reliability_factors": [],
+            "limitations": [],
+            "quality_indicators": {}
+        }
+        
+        successful_analyses = 0
+        total_analyses = len(results)
+        
+        # Analyze each result
+        for func_name, result in results.items():
+            if result.success:
+                successful_analyses += 1
+                
+                # Analyze data quality indicators
+                if func_name == "semantic_search_advanced":
+                    if result.data.get("search_quality") == "high":
+                        assessment["reliability_factors"].append("High-quality semantic search results")
+                        assessment["data_quality_score"] += 0.3
+                    
+                    paper_count = len(result.data.get("papers", []))
+                    if paper_count >= 20:
+                        assessment["reliability_factors"].append(f"Substantial literature base ({paper_count} papers)")
+                        assessment["completeness_score"] += 0.4
+                    elif paper_count < 5:
+                        assessment["limitations"].append("Limited literature base for analysis")
+                
+                elif func_name == "citation_network_analysis":
+                    network_size = result.data.get("network_size", 0)
+                    if network_size > 100:
+                        assessment["reliability_factors"].append("Robust citation network analysis")
+                        assessment["data_quality_score"] += 0.2
+                
+                elif func_name == "research_trend_analysis":
+                    if result.data.get("trend_confidence", 0) > 0.7:
+                        assessment["reliability_factors"].append("High-confidence trend analysis")
+                        assessment["data_quality_score"] += 0.2
+            else:
+                assessment["limitations"].append(f"Failed analysis: {func_name}")
+        
+        # Calculate overall scores
+        completion_rate = successful_analyses / total_analyses
+        assessment["completeness_score"] += completion_rate * 0.6
+        
+        if assessment["completeness_score"] < 0.5:
+            assessment["completeness_score"] = min(0.5, assessment["completeness_score"])
+        
+        # Determine overall confidence
+        combined_score = (assessment["data_quality_score"] + assessment["completeness_score"]) / 2
+        
+        if combined_score >= 0.8:
+            assessment["overall_confidence"] = "high"
+        elif combined_score >= 0.6:
+            assessment["overall_confidence"] = "medium"
+        else:
+            assessment["overall_confidence"] = "low"
+        
+        # Add quality indicators
+        assessment["quality_indicators"] = {
+            "completion_rate": f"{completion_rate:.1%}",
+            "successful_analyses": successful_analyses,
+            "total_analyses": total_analyses,
+            "combined_quality_score": combined_score
+        }
+        
+        return assessment
+
+class SemanticSearchFunction(FreiyaAPIFunction):
+    """Advanced semantic search function with enhanced capabilities"""
+    
+    def __init__(self, api_key: str, workspace_id: str = None):
+        super().__init__(
+            name="semantic_search_advanced",
+            description="Advanced semantic search with AI-powered query enhancement and deep analysis",
+            endpoint="/search/semantic",
+            api_key=api_key,
+            workspace_id=workspace_id
+        )
+        
+        # Enhanced parameters
+        self.add_parameter(FunctionParameter(
+            name="include_semantic_analysis",
+            type=bool,
+            description="Include deep semantic analysis of results",
+            required=False,
+            default=True
+        ))
+        
+        self.add_parameter(FunctionParameter(
+            name="include_citation_context",
+            type=bool,
+            description="Include citation context analysis",
+            required=False,
+            default=False
+        ))
+        
+        self.add_parameter(FunctionParameter(
+            name="semantic_similarity_threshold",
+            type=float,
+            description="Minimum semantic similarity threshold",
+            required=False,
+            default=0.7,
+            constraints={"min": 0.0, "max": 1.0}
+        ))
+
+class ResearchTrendAnalysisFunction(FreiyaAPIFunction):
+    """Function for analyzing research trends over time"""
+    
+    def __init__(self, api_key: str, workspace_id: str = None):
+        super().__init__(
+            name="research_trend_analysis",
+            description="Analyze research trends, publication patterns, and emerging topics over time",
+            endpoint="/analysis/trends",
+            api_key=api_key,
+            workspace_id=workspace_id
+        )
+        
+        self.add_parameter(FunctionParameter(
+            name="time_range",
+            type=dict,
+            description="Time range for trend analysis",
+            required=True,
+            examples=[{"start": "2020-01-01", "end": "2024-12-31"}]
+        ))
+        
+        self.add_parameter(FunctionParameter(
+            name="trend_granularity",
+            type=str,
+            description="Granularity of trend analysis",
+            required=False,
+            default="yearly",
+            constraints={"enum": ["monthly", "quarterly", "yearly"]}
+        ))
+        
+        self.add_parameter(FunctionParameter(
+            name="include_predictions",
+            type=bool,
+            description="Include trend predictions",
+            required=False,
+            default=False
+        ))
+
+# Demonstration function
+async def demonstrate_scientific_function_integration():
+    """Demonstrate advanced scientific function integration"""
+    
+    print("Initializing Scientific Function Suite...")
+    suite = ScientificFunctionSuite(
+        api_key="demo_freiya_key", 
+        workspace_id="research_lab"
+    )
+    
+    # Demonstrate comprehensive research
+    research_topic = "artificial intelligence in climate change mitigation"
+    
+    print(f"\nConducting comprehensive research on: '{research_topic}'")
+    print("This may take a few moments as we execute multiple analyses...")
+    
+    research_report = await suite.conduct_comprehensive_research(
+        research_topic=research_topic,
+        scope="comprehensive"
+    )
+    
+    # Display results
+    print("\n" + "="*70)
+    print("COMPREHENSIVE RESEARCH REPORT")
+    print("="*70)
+    
+    print(f"\nTopic: {research_report['research_topic']}")
+    print(f"Analysis Date: {research_report['synthesis_date']}")
+    print(f"Methodology: {research_report['methodology']}")
+    
+    # Executive Summary
+    if research_report['executive_summary']:
+        print(f"\nExecutive Summary:")
+        print(research_report['executive_summary'])
+    
+    # Literature Overview
+    if research_report['literature_overview']:
+        overview = research_report['literature_overview']
+        print(f"\nLiterature Overview:")
+        print(f"- Papers Analyzed: {overview.get('total_papers_analyzed', 0)}")
+        print(f"- Search Quality: {overview.get('search_quality', 'Unknown')}")
+        
+        if 'primary_sources' in overview and overview['primary_sources']:
+            print(f"- Top Sources:")
+            for i, paper in enumerate(overview['primary_sources'][:3], 1):
+                print(f"  {i}. {paper.get('title', 'Unknown Title')}")
+    
+    # Research Landscape
+    if research_report['research_landscape']:
+        landscape = research_report['research_landscape']
+        print(f"\nResearch Landscape:")
+        print(f"- Citation Network Size: {landscape.get('citation_network_size', 0)}")
+        
+        influential_papers = landscape.get('key_influential_papers', [])
+        if influential_papers:
+            print(f"- Most Influential Papers:")
+            for i, paper in enumerate(influential_papers[:3], 1):
+                print(f"  {i}. {paper.get('title', 'Unknown')}")
+    
+    # Trends and Patterns
+    if research_report['trends_and_patterns']:
+        trends = research_report['trends_and_patterns']
+        print(f"\nTrends and Patterns:")
+        
+        emerging_topics = trends.get('emerging_topics', [])
+        if emerging_topics:
+            print(f"- Emerging Topics: {', '.join(emerging_topics[:5])}")
+        
+        print(f"- Research Velocity: {trends.get('research_velocity', 'Unknown')}")
+    
+    # Research Gaps
+    if research_report['research_gaps']:
+        print(f"\nResearch Gaps:")
+        for i, gap in enumerate(research_report['research_gaps'][:3], 1):
+            print(f"  {i}. {gap}")
+    
+    # Future Directions
+    if research_report['future_directions']:
+        print(f"\nFuture Research Directions:")
+        for i, direction in enumerate(research_report['future_directions'][:3], 1):
+            print(f"  {i}. {direction}")
+    
+    # Confidence Assessment
+    confidence = research_report['confidence_assessment']
+    print(f"\nConfidence Assessment:")
+    print(f"- Overall Confidence: {confidence['overall_confidence'].title()}")
+    print(f"- Data Quality Score: {confidence['data_quality_score']:.2f}")
+    print(f"- Completeness Score: {confidence['completeness_score']:.2f}")
+    print(f"- Analyses Completed: {confidence['quality_indicators']['completion_rate']}")
+    
+    if confidence['reliability_factors']:
+        print(f"- Reliability Factors:")
+        for factor in confidence['reliability_factors']:
+            print(f"  • {factor}")
+    
+    if confidence['limitations']:
+        print(f"- Limitations:")
+        for limitation in confidence['limitations']:
+            print(f"  • {limitation}")
+    
+    # Recommendations
+    if research_report['recommendations']:
+        print(f"\nRecommendations:")
+        for i, recommendation in enumerate(research_report['recommendations'][:3], 1):
+            print(f"  {i}. {recommendation}")
+
+if __name__ == "__main__":
+    asyncio.run(demonstrate_scientific_function_integration())
+```
+
+## Conclusion
+
+Function calling represents the bridge between AI agents' cognitive capabilities and real-world action. Through sophisticated function calling architectures, dynamic discovery mechanisms, and advanced execution patterns, agents can transcend the limitations of their training data and interact meaningfully with external systems, APIs, and services.
+
+The implementation patterns demonstrated in this guide—from basic API integration to complex streaming functions and scientific research workflows—provide a comprehensive foundation for building agent systems that can effectively leverage external capabilities. The deep integration with EderSpark's Freiya platform specifically illustrates how domain-specific function calling can enable breakthrough research and discovery applications.
+
+As AI agents continue to evolve toward greater autonomy and capability, function calling will remain a critical enabling technology. The architectures and patterns presented here establish a robust foundation for developing agents that can adapt, learn, and excel in dynamic environments while maintaining reliability, security, and effectiveness in their interactions with the broader digital ecosystem.
+
+The future of AI agents lies not just in their ability to understand and reason, but in their capacity to act intelligently in the real world through sophisticated function calling capabilities that bridge the gap between artificial intelligence and practical utility.

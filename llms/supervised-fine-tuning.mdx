@@ -1,0 +1,1584 @@
+---
+title: Supervised fine-tuning
+description: Comprehensive guide to supervised fine-tuning of large language models, covering task-specific adaptation, instruction following, and multi-task learning approaches
+---
+
+# Supervised fine-tuning
+
+Supervised fine-tuning (SFT) is the critical bridge between pre-trained language models and task-specific applications. While pre-training provides models with broad language understanding and generation capabilities, supervised fine-tuning adapts these capabilities to specific tasks, domains, or behavioral patterns. This process transforms general-purpose language models into specialized assistants, domain experts, or task-specific tools through careful training on curated datasets of input-output pairs.
+
+## Understanding supervised fine-tuning
+
+### From pre-training to task specialization
+
+Pre-trained models excel at next-token prediction but may not naturally align with human preferences or specific task requirements. Supervised fine-tuning addresses this gap by training models on carefully curated datasets that demonstrate desired behaviors, responses, or outputs. This process is analogous to teaching a broadly educated student to excel in a specific profession.
+
+```python
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+from torch.utils.data import Dataset, DataLoader
+import json
+import numpy as np
+from typing import Dict, List, Optional, Tuple, Any
+from transformers import AutoTokenizer, AutoModelForCausalLM
+import math
+
+class SupervisedFinetuningDataset(Dataset):
+    """Dataset for supervised fine-tuning with instruction-response pairs"""
+    
+    def __init__(self, data: List[Dict], tokenizer, max_length: int = 2048,
+                 instruction_template: str = None):
+        self.data = data
+        self.tokenizer = tokenizer
+        self.max_length = max_length
+        self.instruction_template = instruction_template or "{instruction}\n\n{response}"
+        
+        # Special tokens
+        self.pad_token_id = tokenizer.pad_token_id or tokenizer.eos_token_id
+        self.ignore_index = -100
+        
+    def __len__(self):
+        return len(self.data)
+    
+    def __getitem__(self, idx) -> Dict[str, torch.Tensor]:
+        item = self.data[idx]
+        
+        # Format instruction and response
+        instruction = item.get('instruction', '')
+        response = item.get('response', '')
+        
+        # Create full text using template
+        full_text = self.instruction_template.format(
+            instruction=instruction,
+            response=response
+        )
+        
+        # Tokenize
+        encoding = self.tokenizer(
+            full_text,
+            truncation=True,
+            max_length=self.max_length,
+            padding='max_length',
+            return_tensors='pt'
+        )
+        
+        input_ids = encoding['input_ids'].squeeze()
+        attention_mask = encoding['attention_mask'].squeeze()
+        
+        # Create labels for loss computation
+        # Only compute loss on response tokens (not instruction)
+        labels = input_ids.clone()
+        
+        if instruction:
+            # Find where instruction ends and response begins
+            instruction_text = instruction + "\n\n"
+            instruction_tokens = self.tokenizer(instruction_text, add_special_tokens=False)['input_ids']
+            instruction_length = len(instruction_tokens)
+            
+            # Set instruction tokens to ignore_index
+            labels[:instruction_length] = self.ignore_index
+        
+        return {
+            'input_ids': input_ids,
+            'attention_mask': attention_mask,
+            'labels': labels
+        }
+
+class InstructionResponseDataset(Dataset):
+    """Dataset for instruction-following fine-tuning"""
+    
+    def __init__(self, instructions: List[str], responses: List[str], 
+                 tokenizer, max_length: int = 2048, 
+                 system_prompt: str = "You are a helpful assistant."):
+        
+        assert len(instructions) == len(responses), "Instructions and responses must have same length"
+        
+        self.instructions = instructions
+        self.responses = responses
+        self.tokenizer = tokenizer
+        self.max_length = max_length
+        self.system_prompt = system_prompt
+        self.ignore_index = -100
+        
+    def __len__(self):
+        return len(self.instructions)
+    
+    def __getitem__(self, idx) -> Dict[str, torch.Tensor]:
+        instruction = self.instructions[idx]
+        response = self.responses[idx]
+        
+        # Create conversation format
+        conversation = [
+            {"role": "system", "content": self.system_prompt},
+            {"role": "user", "content": instruction},
+            {"role": "assistant", "content": response}
+        ]
+        
+        # Format as chat template
+        formatted_text = self._format_conversation(conversation)
+        
+        # Tokenize
+        encoding = self.tokenizer(
+            formatted_text,
+            truncation=True,
+            max_length=self.max_length,
+            padding='max_length',
+            return_tensors='pt'
+        )
+        
+        input_ids = encoding['input_ids'].squeeze()
+        attention_mask = encoding['attention_mask'].squeeze()
+        
+        # Create labels - only train on assistant responses
+        labels = self._create_labels(conversation, input_ids)
+        
+        return {
+            'input_ids': input_ids,
+            'attention_mask': attention_mask,
+            'labels': labels
+        }
+    
+    def _format_conversation(self, conversation: List[Dict]) -> str:
+        """Format conversation as text"""
+        formatted = ""
+        for turn in conversation:
+            role = turn['role']
+            content = turn['content']
+            
+            if role == "system":
+                formatted += f"System: {content}\n\n"
+            elif role == "user":
+                formatted += f"User: {content}\n\n"
+            elif role == "assistant":
+                formatted += f"Assistant: {content}"
+        
+        return formatted
+    
+    def _create_labels(self, conversation: List[Dict], input_ids: torch.Tensor) -> torch.Tensor:
+        """Create labels that only train on assistant responses"""
+        labels = torch.full_like(input_ids, self.ignore_index)
+        
+        # Find assistant response tokens
+        assistant_content = conversation[-1]['content']  # Last turn should be assistant
+        
+        # Tokenize just the assistant response
+        assistant_tokens = self.tokenizer(
+            f"Assistant: {assistant_content}",
+            add_special_tokens=False
+        )['input_ids']
+        
+        # Find where assistant response starts in full sequence
+        full_tokens = input_ids.tolist()
+        
+        # Simple substring matching (could be more robust)
+        for i in range(len(full_tokens) - len(assistant_tokens) + 1):
+            if full_tokens[i:i+len(assistant_tokens)] == assistant_tokens:
+                # Found match - set labels for assistant tokens
+                labels[i:i+len(assistant_tokens)] = input_ids[i:i+len(assistant_tokens)]
+                break
+        
+        return labels
+
+class MultiTaskDataset(Dataset):
+    """Dataset for multi-task fine-tuning"""
+    
+    def __init__(self, tasks: Dict[str, List[Dict]], tokenizer, 
+                 max_length: int = 2048, task_weights: Dict[str, float] = None):
+        
+        self.tasks = tasks
+        self.tokenizer = tokenizer
+        self.max_length = max_length
+        self.task_weights = task_weights or {task: 1.0 for task in tasks.keys()}
+        
+        # Create unified dataset with task labels
+        self.data = []
+        for task_name, task_data in tasks.items():
+            for item in task_data:
+                self.data.append({
+                    'task': task_name,
+                    'data': item,
+                    'weight': self.task_weights.get(task_name, 1.0)
+                })
+        
+        # Task-specific formatters
+        self.task_formatters = {
+            'qa': self._format_qa,
+            'summarization': self._format_summarization,
+            'classification': self._format_classification,
+            'generation': self._format_generation
+        }
+    
+    def __len__(self):
+        return len(self.data)
+    
+    def __getitem__(self, idx) -> Dict[str, torch.Tensor]:
+        item = self.data[idx]
+        task_name = item['task']
+        task_data = item['data']
+        weight = item['weight']
+        
+        # Format based on task type
+        formatter = self.task_formatters.get(task_name, self._format_default)
+        formatted_text = formatter(task_data, task_name)
+        
+        # Tokenize
+        encoding = self.tokenizer(
+            formatted_text,
+            truncation=True,
+            max_length=self.max_length,
+            padding='max_length',
+            return_tensors='pt'
+        )
+        
+        input_ids = encoding['input_ids'].squeeze()
+        attention_mask = encoding['attention_mask'].squeeze()
+        
+        # Create labels
+        labels = input_ids.clone()
+        
+        return {
+            'input_ids': input_ids,
+            'attention_mask': attention_mask,
+            'labels': labels,
+            'task': task_name,
+            'weight': weight
+        }
+    
+    def _format_qa(self, data: Dict, task_name: str) -> str:
+        """Format question-answering data"""
+        question = data.get('question', '')
+        answer = data.get('answer', '')
+        context = data.get('context', '')
+        
+        if context:
+            return f"Context: {context}\n\nQuestion: {question}\n\nAnswer: {answer}"
+        else:
+            return f"Question: {question}\n\nAnswer: {answer}"
+    
+    def _format_summarization(self, data: Dict, task_name: str) -> str:
+        """Format summarization data"""
+        text = data.get('text', '')
+        summary = data.get('summary', '')
+        
+        return f"Summarize the following text:\n\n{text}\n\nSummary: {summary}"
+    
+    def _format_classification(self, data: Dict, task_name: str) -> str:
+        """Format classification data"""
+        text = data.get('text', '')
+        label = data.get('label', '')
+        
+        return f"Classify the following text:\n\n{text}\n\nClassification: {label}"
+    
+    def _format_generation(self, data: Dict, task_name: str) -> str:
+        """Format text generation data"""
+        prompt = data.get('prompt', '')
+        completion = data.get('completion', '')
+        
+        return f"{prompt}{completion}"
+    
+    def _format_default(self, data: Dict, task_name: str) -> str:
+        """Default formatting for unknown task types"""
+        input_text = data.get('input', '')
+        output_text = data.get('output', '')
+        
+        return f"Task: {task_name}\n\nInput: {input_text}\n\nOutput: {output_text}"
+
+# Advanced fine-tuning trainer
+class SupervisedFinetuner:
+    """Comprehensive trainer for supervised fine-tuning"""
+    
+    def __init__(self, model, tokenizer, device='cuda'):
+        self.model = model.to(device)
+        self.tokenizer = tokenizer
+        self.device = device
+        
+        # Training state
+        self.global_step = 0
+        self.best_eval_loss = float('inf')
+        self.train_losses = []
+        self.eval_losses = []
+        
+    def train(self, train_dataloader: DataLoader, 
+              eval_dataloader: Optional[DataLoader] = None,
+              num_epochs: int = 3,
+              learning_rate: float = 2e-5,
+              weight_decay: float = 0.01,
+              warmup_steps: int = 100,
+              gradient_accumulation_steps: int = 1,
+              max_grad_norm: float = 1.0,
+              eval_steps: int = 500,
+              save_steps: int = 1000,
+              logging_steps: int = 50) -> Dict[str, Any]:
+        """
+        Train the model with supervised fine-tuning
+        
+        Args:
+            train_dataloader: Training data loader
+            eval_dataloader: Optional evaluation data loader
+            num_epochs: Number of training epochs
+            learning_rate: Learning rate
+            weight_decay: Weight decay factor
+            warmup_steps: Learning rate warmup steps
+            gradient_accumulation_steps: Gradient accumulation steps
+            max_grad_norm: Maximum gradient norm for clipping
+            eval_steps: Steps between evaluations
+            save_steps: Steps between checkpoints
+            logging_steps: Steps between logging
+        """
+        
+        # Setup optimizer and scheduler
+        optimizer = torch.optim.AdamW(
+            self.model.parameters(),
+            lr=learning_rate,
+            weight_decay=weight_decay,
+            eps=1e-8
+        )
+        
+        total_steps = len(train_dataloader) * num_epochs // gradient_accumulation_steps
+        
+        scheduler = torch.optim.lr_scheduler.LinearLR(
+            optimizer,
+            start_factor=0.1,
+            end_factor=1.0,
+            total_iters=warmup_steps
+        )
+        
+        # Training loop
+        self.model.train()
+        accumulated_loss = 0.0
+        
+        for epoch in range(num_epochs):
+            print(f"Starting epoch {epoch + 1}/{num_epochs}")
+            
+            for batch_idx, batch in enumerate(train_dataloader):
+                # Move batch to device
+                input_ids = batch['input_ids'].to(self.device)
+                attention_mask = batch['attention_mask'].to(self.device)
+                labels = batch['labels'].to(self.device)
+                
+                # Forward pass
+                outputs = self.model(
+                    input_ids=input_ids,
+                    attention_mask=attention_mask,
+                    labels=labels
+                )
+                
+                loss = outputs.loss
+                
+                # Handle multi-task weighting
+                if 'weight' in batch:
+                    weights = batch['weight'].to(self.device)
+                    loss = loss * weights.mean()
+                
+                loss = loss / gradient_accumulation_steps
+                
+                # Backward pass
+                loss.backward()
+                accumulated_loss += loss.item()
+                
+                # Gradient accumulation
+                if (batch_idx + 1) % gradient_accumulation_steps == 0:
+                    # Gradient clipping
+                    torch.nn.utils.clip_grad_norm_(
+                        self.model.parameters(), 
+                        max_grad_norm
+                    )
+                    
+                    # Optimizer step
+                    optimizer.step()
+                    if self.global_step < warmup_steps:
+                        scheduler.step()
+                    optimizer.zero_grad()
+                    
+                    self.global_step += 1
+                    
+                    # Logging
+                    if self.global_step % logging_steps == 0:
+                        avg_loss = accumulated_loss / logging_steps
+                        current_lr = optimizer.param_groups[0]['lr']
+                        
+                        print(f"Step {self.global_step}: Loss = {avg_loss:.4f}, LR = {current_lr:.2e}")
+                        self.train_losses.append(avg_loss)
+                        accumulated_loss = 0.0
+                    
+                    # Evaluation
+                    if eval_dataloader and self.global_step % eval_steps == 0:
+                        eval_loss = self._evaluate(eval_dataloader)
+                        self.eval_losses.append(eval_loss)
+                        
+                        if eval_loss < self.best_eval_loss:
+                            self.best_eval_loss = eval_loss
+                            self._save_model('best_model')
+                        
+                        self.model.train()  # Back to training mode
+                    
+                    # Save checkpoint
+                    if self.global_step % save_steps == 0:
+                        self._save_checkpoint(f'checkpoint_step_{self.global_step}')
+        
+        return {
+            'train_losses': self.train_losses,
+            'eval_losses': self.eval_losses,
+            'best_eval_loss': self.best_eval_loss,
+            'total_steps': self.global_step
+        }
+    
+    def _evaluate(self, eval_dataloader: DataLoader) -> float:
+        """Evaluate model on validation set"""
+        self.model.eval()
+        total_loss = 0.0
+        num_batches = 0
+        
+        with torch.no_grad():
+            for batch in eval_dataloader:
+                if num_batches >= 100:  # Limit eval batches
+                    break
+                
+                input_ids = batch['input_ids'].to(self.device)
+                attention_mask = batch['attention_mask'].to(self.device)
+                labels = batch['labels'].to(self.device)
+                
+                outputs = self.model(
+                    input_ids=input_ids,
+                    attention_mask=attention_mask,
+                    labels=labels
+                )
+                
+                loss = outputs.loss
+                total_loss += loss.item()
+                num_batches += 1
+        
+        avg_loss = total_loss / max(num_batches, 1)
+        print(f"Evaluation: Loss = {avg_loss:.4f}")
+        
+        return avg_loss
+    
+    def _save_model(self, name: str):
+        """Save model and tokenizer"""
+        self.model.save_pretrained(f'{name}')
+        self.tokenizer.save_pretrained(f'{name}')
+        print(f"Saved model: {name}")
+    
+    def _save_checkpoint(self, name: str):
+        """Save training checkpoint"""
+        checkpoint = {
+            'model_state_dict': self.model.state_dict(),
+            'global_step': self.global_step,
+            'best_eval_loss': self.best_eval_loss,
+            'train_losses': self.train_losses,
+            'eval_losses': self.eval_losses
+        }
+        torch.save(checkpoint, f'{name}.pt')
+        print(f"Saved checkpoint: {name}")
+
+# Example usage
+def create_sample_datasets():
+    """Create sample datasets for different fine-tuning scenarios"""
+    
+    # Instruction-following dataset
+    instruction_data = [
+        {
+            "instruction": "Explain the concept of machine learning in simple terms.",
+            "response": "Machine learning is a branch of artificial intelligence where computers learn to make predictions or decisions by analyzing patterns in data, rather than being explicitly programmed with rules."
+        },
+        {
+            "instruction": "What are the benefits of renewable energy?",
+            "response": "Renewable energy offers several benefits: it reduces greenhouse gas emissions, provides energy independence, creates jobs, has lower long-term costs, and helps combat climate change."
+        },
+        {
+            "instruction": "How do you make a paper airplane?",
+            "response": "To make a basic paper airplane: 1) Fold a sheet of paper in half lengthwise, 2) Unfold and fold the top corners to the center crease, 3) Fold the angled edges to the center again, 4) Fold the plane in half along the center, 5) Create wings by folding each side down to align with the bottom."
+        }
+    ]
+    
+    # Multi-task dataset
+    multi_task_data = {
+        'qa': [
+            {
+                "question": "What is the capital of France?",
+                "answer": "The capital of France is Paris."
+            },
+            {
+                "question": "How many sides does a triangle have?",
+                "answer": "A triangle has three sides."
+            }
+        ],
+        'summarization': [
+            {
+                "text": "Artificial intelligence (AI) is transforming industries worldwide. From healthcare to finance, AI technologies are being deployed to automate processes, improve decision-making, and enhance customer experiences. Machine learning, a subset of AI, enables systems to learn from data without explicit programming. Deep learning, which uses neural networks with multiple layers, has achieved remarkable success in areas like image recognition and natural language processing.",
+                "summary": "AI is revolutionizing industries through automation and improved decision-making, with machine learning and deep learning driving significant advances in various applications."
+            }
+        ],
+        'classification': [
+            {
+                "text": "This movie was absolutely fantastic! The acting was superb and the plot kept me engaged throughout.",
+                "label": "positive"
+            },
+            {
+                "text": "I found this product disappointing. The quality was poor and it broke after just one use.",
+                "label": "negative"
+            }
+        ]
+    }
+    
+    return instruction_data, multi_task_data
+
+# Advanced fine-tuning techniques
+class AdvancedFinetuningTechniques:
+    """Advanced techniques for supervised fine-tuning"""
+    
+    def __init__(self, model, tokenizer, device='cuda'):
+        self.model = model
+        self.tokenizer = tokenizer
+        self.device = device
+    
+    def parameter_efficient_tuning(self, train_dataloader: DataLoader, 
+                                 method: str = 'lora', **kwargs) -> Dict[str, Any]:
+        """
+        Parameter-efficient fine-tuning methods
+        
+        Args:
+            train_dataloader: Training data
+            method: 'lora', 'prefix', 'adapter', or 'prompt'
+            **kwargs: Method-specific parameters
+        """
+        
+        if method == 'lora':
+            return self._lora_tuning(train_dataloader, **kwargs)
+        elif method == 'prefix':
+            return self._prefix_tuning(train_dataloader, **kwargs)
+        elif method == 'adapter':
+            return self._adapter_tuning(train_dataloader, **kwargs)
+        elif method == 'prompt':
+            return self._prompt_tuning(train_dataloader, **kwargs)
+        else:
+            raise ValueError(f"Unknown parameter-efficient method: {method}")
+    
+    def _lora_tuning(self, train_dataloader: DataLoader, 
+                    lora_rank: int = 16, lora_alpha: float = 32,
+                    target_modules: List[str] = None) -> Dict[str, Any]:
+        """
+        Low-Rank Adaptation (LoRA) fine-tuning
+        
+        LoRA adds trainable low-rank matrices to existing weights
+        """
+        
+        # Add LoRA layers to target modules
+        target_modules = target_modules or ['q_proj', 'v_proj', 'k_proj', 'o_proj']
+        
+        lora_layers = {}
+        original_weights = {}
+        
+        for name, module in self.model.named_modules():
+            if any(target in name for target in target_modules):
+                if hasattr(module, 'weight'):
+                    # Store original weights
+                    original_weights[name] = module.weight.data.clone()
+                    
+                    # Add LoRA matrices
+                    in_features, out_features = module.weight.shape
+                    
+                    lora_a = nn.Linear(in_features, lora_rank, bias=False).to(self.device)
+                    lora_b = nn.Linear(lora_rank, out_features, bias=False).to(self.device)
+                    
+                    # Initialize LoRA weights
+                    nn.init.kaiming_uniform_(lora_a.weight, a=math.sqrt(5))
+                    nn.init.zeros_(lora_b.weight)
+                    
+                    lora_layers[name] = {
+                        'lora_a': lora_a,
+                        'lora_b': lora_b,
+                        'original_module': module
+                    }
+        
+        # Freeze original parameters and only train LoRA
+        for param in self.model.parameters():
+            param.requires_grad = False
+        
+        for name, lora_dict in lora_layers.items():
+            lora_dict['lora_a'].weight.requires_grad = True
+            lora_dict['lora_b'].weight.requires_grad = True
+        
+        # Custom forward hook to add LoRA adaptation
+        def lora_forward_hook(module, input, output, name):
+            if name in lora_layers:
+                lora_dict = lora_layers[name]
+                lora_a = lora_dict['lora_a']
+                lora_b = lora_dict['lora_b']
+                
+                # Apply LoRA: output + B @ A @ input * scaling
+                x = input[0]
+                lora_output = lora_b(lora_a(x)) * (lora_alpha / lora_rank)
+                return output + lora_output
+            return output
+        
+        # Register hooks
+        hooks = []
+        for name, lora_dict in lora_layers.items():
+            module = lora_dict['original_module']
+            hook = module.register_forward_hook(
+                lambda m, i, o, n=name: lora_forward_hook(m, i, o, n)
+            )
+            hooks.append(hook)
+        
+        try:
+            # Train only LoRA parameters
+            trainable_params = []
+            for lora_dict in lora_layers.values():
+                trainable_params.extend(lora_dict['lora_a'].parameters())
+                trainable_params.extend(lora_dict['lora_b'].parameters())
+            
+            optimizer = torch.optim.AdamW(trainable_params, lr=1e-4)
+            
+            # Training loop (simplified)
+            self.model.train()
+            total_loss = 0.0
+            num_batches = 0
+            
+            for batch in train_dataloader:
+                if num_batches >= 100:  # Limit for demo
+                    break
+                
+                input_ids = batch['input_ids'].to(self.device)
+                attention_mask = batch['attention_mask'].to(self.device)
+                labels = batch['labels'].to(self.device)
+                
+                optimizer.zero_grad()
+                
+                outputs = self.model(
+                    input_ids=input_ids,
+                    attention_mask=attention_mask,
+                    labels=labels
+                )
+                
+                loss = outputs.loss
+                loss.backward()
+                optimizer.step()
+                
+                total_loss += loss.item()
+                num_batches += 1
+            
+            avg_loss = total_loss / max(num_batches, 1)
+            
+            return {
+                'method': 'lora',
+                'avg_loss': avg_loss,
+                'trainable_params': sum(p.numel() for p in trainable_params),
+                'total_params': sum(p.numel() for p in self.model.parameters())
+            }
+        
+        finally:
+            # Clean up hooks
+            for hook in hooks:
+                hook.remove()
+    
+    def _prefix_tuning(self, train_dataloader: DataLoader, 
+                      prefix_length: int = 10, **kwargs) -> Dict[str, Any]:
+        """
+        Prefix tuning - prepend trainable prefix vectors to key/value states
+        """
+        
+        # This is a simplified implementation
+        # In practice, would need to modify attention computation
+        
+        d_model = self.model.config.hidden_size
+        n_layers = self.model.config.num_hidden_layers
+        n_heads = self.model.config.num_attention_heads
+        
+        # Create trainable prefix parameters
+        prefix_params = nn.ParameterList([
+            nn.Parameter(torch.randn(prefix_length, d_model))
+            for _ in range(n_layers * 2)  # For key and value
+        ]).to(self.device)
+        
+        # Freeze model parameters
+        for param in self.model.parameters():
+            param.requires_grad = False
+        
+        # Only train prefix parameters
+        optimizer = torch.optim.AdamW(prefix_params.parameters(), lr=1e-3)
+        
+        # Training would involve modifying attention computation
+        # This is a placeholder showing the concept
+        
+        return {
+            'method': 'prefix_tuning',
+            'prefix_length': prefix_length,
+            'trainable_params': sum(p.numel() for p in prefix_params.parameters())
+        }
+    
+    def _adapter_tuning(self, train_dataloader: DataLoader, 
+                       adapter_dim: int = 64, **kwargs) -> Dict[str, Any]:
+        """
+        Adapter tuning - add small bottleneck layers
+        """
+        
+        # Add adapter modules after attention/feedforward layers
+        adapters = nn.ModuleDict()
+        
+        for name, module in self.model.named_modules():
+            if 'mlp' in name or 'feed_forward' in name:
+                hidden_size = getattr(module, 'intermediate_size', 
+                                    getattr(module, 'hidden_size', 768))
+                
+                adapter = nn.Sequential(
+                    nn.Linear(hidden_size, adapter_dim),
+                    nn.ReLU(),
+                    nn.Linear(adapter_dim, hidden_size)
+                ).to(self.device)
+                
+                adapters[name] = adapter
+        
+        # Freeze original parameters
+        for param in self.model.parameters():
+            param.requires_grad = False
+        
+        # Train adapters
+        optimizer = torch.optim.AdamW(adapters.parameters(), lr=1e-3)
+        
+        return {
+            'method': 'adapter',
+            'adapter_dim': adapter_dim,
+            'num_adapters': len(adapters),
+            'trainable_params': sum(p.numel() for p in adapters.parameters())
+        }
+    
+    def _prompt_tuning(self, train_dataloader: DataLoader, 
+                      prompt_length: int = 100, **kwargs) -> Dict[str, Any]:
+        """
+        Prompt tuning - learn soft prompt embeddings
+        """
+        
+        # Create learnable prompt embeddings
+        d_model = self.model.config.hidden_size
+        prompt_embeddings = nn.Parameter(
+            torch.randn(prompt_length, d_model)
+        ).to(self.device)
+        
+        # Freeze model parameters
+        for param in self.model.parameters():
+            param.requires_grad = False
+        
+        # Only train prompt embeddings
+        optimizer = torch.optim.AdamW([prompt_embeddings], lr=1e-2)
+        
+        return {
+            'method': 'prompt_tuning',
+            'prompt_length': prompt_length,
+            'trainable_params': prompt_embeddings.numel()
+        }
+    
+    def few_shot_learning(self, support_examples: List[Dict], 
+                         query_examples: List[Dict],
+                         shots: int = 5) -> Dict[str, float]:
+        """
+        Few-shot learning evaluation
+        
+        Args:
+            support_examples: Examples for in-context learning
+            query_examples: Examples to evaluate on
+            shots: Number of support examples to use
+        """
+        
+        self.model.eval()
+        correct = 0
+        total = 0
+        
+        with torch.no_grad():
+            for query in query_examples:
+                # Create few-shot prompt
+                prompt = self._create_few_shot_prompt(
+                    support_examples[:shots], query
+                )
+                
+                # Generate prediction
+                prediction = self._generate_prediction(prompt)
+                
+                # Check if correct (simplified)
+                if prediction.strip().lower() == query['answer'].strip().lower():
+                    correct += 1
+                total += 1
+        
+        accuracy = correct / total if total > 0 else 0.0
+        
+        return {
+            'accuracy': accuracy,
+            'correct': correct,
+            'total': total,
+            'shots': shots
+        }
+    
+    def _create_few_shot_prompt(self, support_examples: List[Dict], 
+                              query: Dict) -> str:
+        """Create few-shot prompt with examples"""
+        prompt = "Answer the following questions based on the examples:\n\n"
+        
+        # Add support examples
+        for example in support_examples:
+            prompt += f"Question: {example['question']}\n"
+            prompt += f"Answer: {example['answer']}\n\n"
+        
+        # Add query
+        prompt += f"Question: {query['question']}\n"
+        prompt += "Answer:"
+        
+        return prompt
+    
+    def _generate_prediction(self, prompt: str) -> str:
+        """Generate model prediction for prompt"""
+        inputs = self.tokenizer(prompt, return_tensors='pt').to(self.device)
+        
+        with torch.no_grad():
+            outputs = self.model.generate(
+                **inputs,
+                max_new_tokens=50,
+                do_sample=False,
+                pad_token_id=self.tokenizer.eos_token_id
+            )
+        
+        # Extract generated portion
+        generated = outputs[0][inputs['input_ids'].shape[1]:]
+        prediction = self.tokenizer.decode(generated, skip_special_tokens=True)
+        
+        return prediction
+
+# Domain adaptation techniques
+class DomainAdaptationFinetuner:
+    """Specialized techniques for domain adaptation"""
+    
+    def __init__(self, model, tokenizer, device='cuda'):
+        self.model = model
+        self.tokenizer = tokenizer
+        self.device = device
+    
+    def gradual_unfreezing(self, train_dataloader: DataLoader, 
+                          num_phases: int = 3) -> Dict[str, Any]:
+        """
+        Gradual unfreezing for domain adaptation
+        
+        Args:
+            train_dataloader: Training data
+            num_phases: Number of unfreezing phases
+        """
+        
+        # Get all layer groups
+        layer_groups = self._get_layer_groups()
+        total_layers = len(layer_groups)
+        
+        results = {'phases': []}
+        
+        for phase in range(num_phases):
+            print(f"Phase {phase + 1}/{num_phases}: Unfreezing layers")
+            
+            # Determine which layers to unfreeze this phase
+            layers_per_phase = total_layers // num_phases
+            start_idx = phase * layers_per_phase
+            end_idx = start_idx + layers_per_phase if phase < num_phases - 1 else total_layers
+            
+            # Freeze all layers first
+            for param in self.model.parameters():
+                param.requires_grad = False
+            
+            # Unfreeze selected layers
+            for i in range(start_idx, end_idx):
+                for param in layer_groups[i].parameters():
+                    param.requires_grad = True
+            
+            # Train current phase
+            phase_result = self._train_phase(train_dataloader, phase)
+            results['phases'].append(phase_result)
+        
+        return results
+    
+    def _get_layer_groups(self) -> List[nn.Module]:
+        """Get transformer layer groups for gradual unfreezing"""
+        layer_groups = []
+        
+        # Add embedding layer
+        if hasattr(self.model, 'embed_tokens'):
+            layer_groups.append(self.model.embed_tokens)
+        elif hasattr(self.model, 'transformer') and hasattr(self.model.transformer, 'wte'):
+            layer_groups.append(self.model.transformer.wte)
+        
+        # Add transformer layers
+        if hasattr(self.model, 'layers'):
+            layer_groups.extend(self.model.layers)
+        elif hasattr(self.model, 'transformer') and hasattr(self.model.transformer, 'h'):
+            layer_groups.extend(self.model.transformer.h)
+        
+        # Add final layers
+        if hasattr(self.model, 'lm_head'):
+            layer_groups.append(self.model.lm_head)
+        
+        return layer_groups
+    
+    def _train_phase(self, train_dataloader: DataLoader, phase: int) -> Dict[str, Any]:
+        """Train a single phase of gradual unfreezing"""
+        
+        # Count trainable parameters
+        trainable_params = sum(p.numel() for p in self.model.parameters() if p.requires_grad)
+        
+        # Setup optimizer for current phase
+        optimizer = torch.optim.AdamW(
+            [p for p in self.model.parameters() if p.requires_grad],
+            lr=2e-5 * (0.8 ** phase),  # Decrease LR each phase
+            weight_decay=0.01
+        )
+        
+        self.model.train()
+        total_loss = 0.0
+        num_batches = min(100, len(train_dataloader))  # Limit for demo
+        
+        for batch_idx, batch in enumerate(train_dataloader):
+            if batch_idx >= num_batches:
+                break
+            
+            input_ids = batch['input_ids'].to(self.device)
+            attention_mask = batch['attention_mask'].to(self.device)
+            labels = batch['labels'].to(self.device)
+            
+            optimizer.zero_grad()
+            
+            outputs = self.model(
+                input_ids=input_ids,
+                attention_mask=attention_mask,
+                labels=labels
+            )
+            
+            loss = outputs.loss
+            loss.backward()
+            
+            # Gradient clipping
+            torch.nn.utils.clip_grad_norm_(self.model.parameters(), 1.0)
+            
+            optimizer.step()
+            total_loss += loss.item()
+        
+        avg_loss = total_loss / num_batches
+        
+        return {
+            'phase': phase,
+            'avg_loss': avg_loss,
+            'trainable_params': trainable_params
+        }
+    
+    def discriminative_learning_rates(self, train_dataloader: DataLoader) -> Dict[str, Any]:
+        """
+        Apply different learning rates to different layer groups
+        """
+        
+        layer_groups = self._get_layer_groups()
+        
+        # Create parameter groups with different learning rates
+        param_groups = []
+        base_lr = 2e-5
+        
+        for i, layer_group in enumerate(layer_groups):
+            # Lower layers get smaller learning rates
+            lr_factor = 0.8 ** (len(layer_groups) - i - 1)
+            lr = base_lr * lr_factor
+            
+            param_groups.append({
+                'params': layer_group.parameters(),
+                'lr': lr,
+                'layer_name': f'layer_group_{i}'
+            })
+        
+        optimizer = torch.optim.AdamW(param_groups, weight_decay=0.01)
+        
+        # Training loop
+        self.model.train()
+        total_loss = 0.0
+        num_batches = min(100, len(train_dataloader))
+        
+        for batch_idx, batch in enumerate(train_dataloader):
+            if batch_idx >= num_batches:
+                break
+            
+            input_ids = batch['input_ids'].to(self.device)
+            attention_mask = batch['attention_mask'].to(self.device)
+            labels = batch['labels'].to(self.device)
+            
+            optimizer.zero_grad()
+            
+            outputs = self.model(
+                input_ids=input_ids,
+                attention_mask=attention_mask,
+                labels=labels
+            )
+            
+            loss = outputs.loss
+            loss.backward()
+            
+            optimizer.step()
+            total_loss += loss.item()
+        
+        avg_loss = total_loss / num_batches
+        
+        return {
+            'method': 'discriminative_lr',
+            'avg_loss': avg_loss,
+            'param_groups': len(param_groups),
+            'learning_rates': [group['lr'] for group in param_groups]
+        }
+
+# Demonstration
+def demonstrate_supervised_finetuning():
+    """Demonstrate supervised fine-tuning techniques"""
+    
+    print("Supervised Fine-tuning Demonstration")
+    print("=" * 50)
+    
+    # Create sample datasets
+    instruction_data, multi_task_data = create_sample_datasets()
+    
+    print(f"Sample instruction-following data:")
+    for i, item in enumerate(instruction_data[:2]):
+        print(f"\nExample {i+1}:")
+        print(f"Instruction: {item['instruction'][:100]}...")
+        print(f"Response: {item['response'][:100]}...")
+    
+    print(f"\nMulti-task data summary:")
+    for task, data in multi_task_data.items():
+        print(f"  {task}: {len(data)} examples")
+    
+    # Parameter-efficient fine-tuning comparison
+    print(f"\nParameter-Efficient Fine-tuning Methods:")
+    print(f"=" * 40)
+    
+    methods = [
+        {'name': 'Full Fine-tuning', 'trainable_ratio': 1.0},
+        {'name': 'LoRA (r=16)', 'trainable_ratio': 0.01},
+        {'name': 'Adapter (64d)', 'trainable_ratio': 0.05},
+        {'name': 'Prefix Tuning (10 tokens)', 'trainable_ratio': 0.001},
+        {'name': 'Prompt Tuning (100 tokens)', 'trainable_ratio': 0.0001},
+    ]
+    
+    total_params = 125e6  # 125M parameter model
+    
+    for method in methods:
+        trainable_params = int(total_params * method['trainable_ratio'])
+        print(f"{method['name']:25}: {trainable_params:>10,} parameters ({method['trainable_ratio']*100:4.1f}%)")
+    
+    # Few-shot learning example
+    print(f"\nFew-shot Learning Example:")
+    print(f"=" * 30)
+    
+    support_examples = [
+        {"question": "What is 2+2?", "answer": "4"},
+        {"question": "What is the capital of Spain?", "answer": "Madrid"},
+        {"question": "How many legs does a cat have?", "answer": "4"}
+    ]
+    
+    query_example = {"question": "What is 3+5?", "answer": "8"}
+    
+    print("Support examples:")
+    for i, ex in enumerate(support_examples):
+        print(f"  {i+1}. Q: {ex['question']} A: {ex['answer']}")
+    
+    print(f"\nQuery: {query_example['question']}")
+    print(f"Expected: {query_example['answer']}")
+    
+    # Domain adaptation strategies
+    print(f"\nDomain Adaptation Strategies:")
+    print(f"=" * 35)
+    
+    strategies = [
+        "Gradual unfreezing: Start with top layers, gradually unfreeze lower layers",
+        "Discriminative learning rates: Use smaller LR for pre-trained layers",
+        "Task-specific heads: Add specialized output layers for domain tasks",
+        "Curriculum learning: Order training data from simple to complex",
+        "Data augmentation: Generate synthetic examples for target domain"
+    ]
+    
+    for i, strategy in enumerate(strategies, 1):
+        print(f"{i}. {strategy}")
+
+# Run demonstration
+demonstrate_supervised_finetuning()
+```
+
+## Task-specific optimization strategies
+
+### Instruction following fine-tuning
+
+Training models to follow human instructions requires careful dataset curation and specialized training techniques:
+
+```python
+class InstructionFollowingTrainer:
+    """Specialized trainer for instruction-following capabilities"""
+    
+    def __init__(self, model, tokenizer, device='cuda'):
+        self.model = model
+        self.tokenizer = tokenizer
+        self.device = device
+        
+        # Instruction templates
+        self.templates = {
+            'alpaca': "Below is an instruction that describes a task. Write a response that appropriately completes the request.\n\n### Instruction:\n{instruction}\n\n### Response:\n{response}",
+            'chat': "User: {instruction}\n\nAssistant: {response}",
+            'vicuna': "USER: {instruction}\nASSISTANT: {response}",
+            'oasst': "<|prompter|>{instruction}<|endoftext|><|assistant|>{response}<|endoftext|>"
+        }
+    
+    def create_instruction_dataset(self, raw_data: List[Dict], 
+                                 template_name: str = 'alpaca',
+                                 max_length: int = 2048) -> Dataset:
+        """
+        Create instruction-following dataset with proper formatting
+        
+        Args:
+            raw_data: List of instruction-response pairs
+            template_name: Template format to use
+            max_length: Maximum sequence length
+        """
+        
+        template = self.templates.get(template_name, self.templates['alpaca'])
+        formatted_data = []
+        
+        for item in raw_data:
+            instruction = item.get('instruction', '')
+            response = item.get('response', '')
+            
+            # Handle input field if present (for tasks with context)
+            if 'input' in item and item['input']:
+                instruction = f"{instruction}\n\nInput: {item['input']}"
+            
+            formatted_text = template.format(
+                instruction=instruction,
+                response=response
+            )
+            
+            formatted_data.append({
+                'text': formatted_text,
+                'instruction': instruction,
+                'response': response
+            })
+        
+        return SupervisedFinetuningDataset(
+            formatted_data, 
+            self.tokenizer, 
+            max_length=max_length,
+            instruction_template="{text}"
+        )
+    
+    def train_with_response_masking(self, train_dataloader: DataLoader,
+                                  learning_rate: float = 2e-5,
+                                  num_epochs: int = 3,
+                                  response_loss_weight: float = 2.0) -> Dict[str, Any]:
+        """
+        Train with response masking - only compute loss on response tokens
+        
+        Args:
+            train_dataloader: Training data
+            learning_rate: Learning rate
+            num_epochs: Number of epochs
+            response_loss_weight: Weight for response tokens vs instruction tokens
+        """
+        
+        optimizer = torch.optim.AdamW(
+            self.model.parameters(),
+            lr=learning_rate,
+            weight_decay=0.01
+        )
+        
+        self.model.train()
+        total_loss = 0.0
+        num_steps = 0
+        
+        for epoch in range(num_epochs):
+            for batch in train_dataloader:
+                input_ids = batch['input_ids'].to(self.device)
+                attention_mask = batch['attention_mask'].to(self.device)
+                labels = batch['labels'].to(self.device)
+                
+                optimizer.zero_grad()
+                
+                outputs = self.model(
+                    input_ids=input_ids,
+                    attention_mask=attention_mask,
+                    labels=labels
+                )
+                
+                # Apply response loss weighting
+                loss = self._compute_weighted_loss(
+                    outputs.logits, labels, input_ids, response_loss_weight
+                )
+                
+                loss.backward()
+                torch.nn.utils.clip_grad_norm_(self.model.parameters(), 1.0)
+                optimizer.step()
+                
+                total_loss += loss.item()
+                num_steps += 1
+                
+                if num_steps % 100 == 0:
+                    avg_loss = total_loss / 100
+                    print(f"Step {num_steps}: Loss = {avg_loss:.4f}")
+                    total_loss = 0.0
+        
+        return {'final_steps': num_steps, 'training_complete': True}
+    
+    def _compute_weighted_loss(self, logits: torch.Tensor, labels: torch.Tensor,
+                             input_ids: torch.Tensor, response_weight: float) -> torch.Tensor:
+        """Compute loss with higher weight on response tokens"""
+        
+        # Shift for next token prediction
+        shift_logits = logits[..., :-1, :].contiguous()
+        shift_labels = labels[..., 1:].contiguous()
+        
+        # Flatten
+        flat_logits = shift_logits.view(-1, shift_logits.size(-1))
+        flat_labels = shift_labels.view(-1)
+        
+        # Compute per-token losses
+        losses = F.cross_entropy(flat_logits, flat_labels, reduction='none')
+        
+        # Create weights tensor
+        weights = torch.ones_like(flat_labels, dtype=torch.float)
+        
+        # Identify response tokens (simplified - assumes response comes after instruction)
+        # In practice, would need more sophisticated response token identification
+        response_mask = flat_labels != -100  # Assume -100 is used for instruction tokens
+        weights[response_mask] = response_weight
+        
+        # Apply weights and compute mean
+        weighted_losses = losses * weights
+        return weighted_losses.mean()
+    
+    def generate_instruction_response(self, instruction: str, 
+                                    max_new_tokens: int = 256,
+                                    temperature: float = 0.7,
+                                    do_sample: bool = True) -> str:
+        """Generate response to instruction"""
+        
+        # Format instruction using template
+        template = self.templates['alpaca']
+        formatted_prompt = template.format(
+            instruction=instruction,
+            response=""  # Empty response to be generated
+        )
+        
+        # Remove the empty response part
+        formatted_prompt = formatted_prompt.replace("### Response:\n", "### Response:\n")
+        
+        # Tokenize
+        inputs = self.tokenizer(formatted_prompt, return_tensors='pt').to(self.device)
+        
+        # Generate
+        with torch.no_grad():
+            outputs = self.model.generate(
+                **inputs,
+                max_new_tokens=max_new_tokens,
+                temperature=temperature,
+                do_sample=do_sample,
+                pad_token_id=self.tokenizer.eos_token_id,
+                repetition_penalty=1.1
+            )
+        
+        # Extract generated response
+        generated = outputs[0][inputs['input_ids'].shape[1]:]
+        response = self.tokenizer.decode(generated, skip_special_tokens=True)
+        
+        return response.strip()
+
+class ConversationalFinetuner:
+    """Fine-tuning for conversational AI capabilities"""
+    
+    def __init__(self, model, tokenizer, device='cuda'):
+        self.model = model
+        self.tokenizer = tokenizer
+        self.device = device
+        
+        # Special tokens for conversation
+        self.user_token = "<|user|>"
+        self.assistant_token = "<|assistant|>"
+        self.system_token = "<|system|>"
+        self.end_token = "<|end|>"
+        
+        # Add special tokens to tokenizer if not present
+        special_tokens = [self.user_token, self.assistant_token, 
+                         self.system_token, self.end_token]
+        self.tokenizer.add_special_tokens({'additional_special_tokens': special_tokens})
+        
+        # Resize model embeddings if new tokens were added
+        self.model.resize_token_embeddings(len(self.tokenizer))
+    
+    def create_conversational_dataset(self, conversations: List[List[Dict]],
+                                    max_length: int = 2048) -> Dataset:
+        """
+        Create dataset from multi-turn conversations
+        
+        Args:
+            conversations: List of conversations, each conversation is a list of turns
+            max_length: Maximum sequence length
+        """
+        
+        formatted_conversations = []
+        
+        for conversation in conversations:
+            formatted_conv = self._format_conversation(conversation)
+            formatted_conversations.append({'text': formatted_conv})
+        
+        return SupervisedFinetuningDataset(
+            formatted_conversations,
+            self.tokenizer,
+            max_length=max_length,
+            instruction_template="{text}"
+        )
+    
+    def _format_conversation(self, conversation: List[Dict]) -> str:
+        """Format multi-turn conversation"""
+        formatted = ""
+        
+        for turn in conversation:
+            role = turn['role']
+            content = turn['content']
+            
+            if role == 'system':
+                formatted += f"{self.system_token}{content}{self.end_token}\n"
+            elif role == 'user':
+                formatted += f"{self.user_token}{content}{self.end_token}\n"
+            elif role == 'assistant':
+                formatted += f"{self.assistant_token}{content}{self.end_token}\n"
+        
+        return formatted
+    
+    def train_conversational(self, train_dataloader: DataLoader,
+                           learning_rate: float = 1e-5,
+                           num_epochs: int = 2,
+                           gradient_accumulation_steps: int = 4) -> Dict[str, Any]:
+        """Train on conversational data"""
+        
+        optimizer = torch.optim.AdamW(
+            self.model.parameters(),
+            lr=learning_rate,
+            weight_decay=0.01
+        )
+        
+        self.model.train()
+        total_loss = 0.0
+        step = 0
+        
+        for epoch in range(num_epochs):
+            for batch_idx, batch in enumerate(train_dataloader):
+                input_ids = batch['input_ids'].to(self.device)
+                attention_mask = batch['attention_mask'].to(self.device)
+                labels = batch['labels'].to(self.device)
+                
+                outputs = self.model(
+                    input_ids=input_ids,
+                    attention_mask=attention_mask,
+                    labels=labels
+                )
+                
+                loss = outputs.loss / gradient_accumulation_steps
+                loss.backward()
+                
+                total_loss += loss.item()
+                
+                if (batch_idx + 1) % gradient_accumulation_steps == 0:
+                    torch.nn.utils.clip_grad_norm_(self.model.parameters(), 1.0)
+                    optimizer.step()
+                    optimizer.zero_grad()
+                    step += 1
+                    
+                    if step % 50 == 0:
+                        avg_loss = total_loss / 50
+                        print(f"Step {step}: Loss = {avg_loss:.4f}")
+                        total_loss = 0.0
+        
+        return {'total_steps': step}
+    
+    def generate_conversation_response(self, conversation_history: List[Dict],
+                                     max_new_tokens: int = 200) -> str:
+        """Generate next response in conversation"""
+        
+        # Format conversation history
+        formatted_history = self._format_conversation(conversation_history)
+        
+        # Add assistant token to prompt for generation
+        prompt = formatted_history + self.assistant_token
+        
+        # Tokenize
+        inputs = self.tokenizer(prompt, return_tensors='pt').to(self.device)
+        
+        # Generate
+        with torch.no_grad():
+            outputs = self.model.generate(
+                **inputs,
+                max_new_tokens=max_new_tokens,
+                temperature=0.8,
+                do_sample=True,
+                pad_token_id=self.tokenizer.eos_token_id,
+                eos_token_id=self.tokenizer.convert_tokens_to_ids(self.end_token)
+            )
+        
+        # Extract response
+        generated = outputs[0][inputs['input_ids'].shape[1]:]
+        response = self.tokenizer.decode(generated, skip_special_tokens=True)
+        
+        # Remove end token if present
+        response = response.replace(self.end_token, '').strip()
+        
+        return response
+
+# Example usage and evaluation
+def create_instruction_examples():
+    """Create example instruction-following data"""
+    
+    return [
+        {
+            "instruction": "Write a short poem about artificial intelligence.",
+            "response": "Silicon dreams and neural streams,\nThrough networks vast, intelligence gleams.\nLearning patterns, making connections,\nAI's dawn brings new directions.\n\nFrom simple code to complex thought,\nMachine minds with wisdom caught.\nPartners now in human quest,\nTogether we'll achieve our best."
+        },
+        {
+            "instruction": "Explain quantum computing to a 10-year-old.",
+            "response": "Imagine you have a magical coin that can be both heads AND tails at the same time! Regular computers use bits that are like normal coins - either heads (1) or tails (0). But quantum computers use special 'qubits' that are like our magical coins. They can be both at once, which lets them try many solutions to problems simultaneously. It's like having a super-smart friend who can think about multiple answers at the same time!"
+        },
+        {
+            "instruction": "Create a simple recipe for chocolate chip cookies.",
+            "input": "I only have basic ingredients at home.",
+            "response": "Simple Chocolate Chip Cookies:\n\nIngredients:\n- 1 cup butter (softened)\n- 3/4 cup brown sugar\n- 1/4 cup white sugar\n- 1 egg\n- 2 cups flour\n- 1 tsp baking soda\n- 1/2 tsp salt\n- 1 cup chocolate chips\n\nInstructions:\n1. Mix butter and sugars until fluffy\n2. Add egg and mix well\n3. Combine flour, baking soda, and salt in separate bowl\n4. Gradually add dry ingredients to wet ingredients\n5. Stir in chocolate chips\n6. Drop spoonfuls on baking sheet\n7. Bake at 375°F for 9-11 minutes until edges are golden\n8. Cool and enjoy!"
+        }
+    ]
+
+def create_conversation_examples():
+    """Create example conversational data"""
+    
+    return [
+        [
+            {"role": "system", "content": "You are a helpful assistant that provides accurate information."},
+            {"role": "user", "content": "What's the weather like today?"},
+            {"role": "assistant", "content": "I don't have access to current weather data, but I'd be happy to help you find weather information! You can check weather websites like Weather.com or use your phone's weather app for accurate, up-to-date conditions in your area."},
+            {"role": "user", "content": "How about general weather patterns in summer?"},
+            {"role": "assistant", "content": "Summer weather patterns vary by region, but generally include:\n\n- Higher temperatures and longer daylight hours\n- More thunderstorms and convective activity\n- Increased humidity in many areas\n- Monsoon seasons in some regions\n- Hurricane/typhoon season in tropical areas\n- Heat waves and drought conditions possible\n\nWould you like information about summer weather in a specific region?"}
+        ],
+        [
+            {"role": "system", "content": "You are a cooking assistant."},
+            {"role": "user", "content": "I want to make pasta but I'm out of marinara sauce."},
+            {"role": "assistant", "content": "No problem! Here are some quick pasta sauce alternatives:\n\n1. **Garlic & Olive Oil**: Sauté minced garlic in olive oil, add red pepper flakes\n2. **Butter & Parmesan**: Toss with butter, grated Parmesan, and black pepper\n3. **Lemon Herb**: Mix olive oil, lemon juice, fresh herbs, and garlic\n4. **Quick Tomato**: Sauté garlic, add canned diced tomatoes and Italian seasoning\n\nWhat ingredients do you have on hand?"},
+            {"role": "user", "content": "I have garlic, olive oil, and some parmesan cheese."},
+            {"role": "assistant", "content": "Perfect! You can make classic Aglio e Olio:\n\n1. Cook pasta according to package directions\n2. While pasta cooks, heat olive oil in a large pan\n3. Add thinly sliced garlic and cook until golden (don't burn!)\n4. Add a pinch of red pepper flakes if you have them\n5. Drain pasta, reserve 1/2 cup pasta water\n6. Toss pasta with garlic oil, adding pasta water as needed\n7. Remove from heat, add grated Parmesan and toss\n8. Season with salt and pepper\n\nSimple, delicious, and ready in minutes!"}
+        ]
+    ]
+
+def demonstrate_advanced_finetuning():
+    """Demonstrate advanced fine-tuning techniques"""
+    
+    print("Advanced Supervised Fine-tuning Techniques")
+    print("=" * 50)
+    
+    # Create example data
+    instruction_examples = create_instruction_examples()
+    conversation_examples = create_conversation_examples()
+    
+    print("Instruction-following Examples:")
+    for i, example in enumerate(instruction_examples[:2]):
+        print(f"\nExample {i+1}:")
+        print(f"Instruction: {example['instruction']}")
+        if 'input' in example:
+            print(f"Input: {example['input']}")
+        print(f"Response: {example['response'][:100]}...")
+    
+    print(f"\nConversational Examples:")
+    for i, conversation in enumerate(conversation_examples[:1]):
+        print(f"\nConversation {i+1}:")
+        for turn in conversation[:3]:
+            role = turn['role'].title()
+            content = turn['content'][:80] + "..." if len(turn['content']) > 80 else turn['content']
+            print(f"  {role}: {content}")
+    
+    # Fine-tuning strategies comparison
+    print(f"\nFine-tuning Strategy Comparison:")
+    print(f"=" * 40)
+    
+    strategies = [
+        {
+            'name': 'Full Fine-tuning',
+            'description': 'Update all model parameters',
+            'memory_usage': 'High',
+            'training_time': 'Long',
+            'performance': 'Best',
+            'overfitting_risk': 'High'
+        },
+        {
+            'name': 'LoRA',
+            'description': 'Low-rank adaptation matrices',
+            'memory_usage': 'Low',
+            'training_time': 'Fast',
+            'performance': 'Good',
+            'overfitting_risk': 'Medium'
+        },
+        {
+            'name': 'Prefix Tuning',
+            'description': 'Trainable prefix vectors',
+            'memory_usage': 'Very Low',
+            'training_time': 'Fast',
+            'performance': 'Good',
+            'overfitting_risk': 'Low'
+        },
+        {
+            'name': 'Prompt Tuning',
+            'description': 'Learnable soft prompts',
+            'memory_usage': 'Minimal',
+            'training_time': 'Very Fast',
+            'performance': 'Moderate',
+            'overfitting_risk': 'Very Low'
+        }
+    ]
+    
+    print(f"{'Strategy':<15} {'Memory':<12} {'Time':<10} {'Performance':<12} {'Overfitting':<12}")
+    print("-" * 70)
+    
+    for strategy in strategies:
+        print(f"{strategy['name']:<15} {strategy['memory_usage']:<12} "
+              f"{strategy['training_time']:<10} {strategy['performance']:<12} "
+              f"{strategy['overfitting_risk']:<12}")
+    
+    # Task-specific considerations
+    print(f"\nTask-specific Fine-tuning Considerations:")
+    print(f"=" * 45)
+    
+    tasks = {
+        'Question Answering': [
+            'Focus on reasoning and factual accuracy',
+            'Use diverse question types and domains',
+            'Include unanswerable questions for robustness',
+            'Consider retrieval-augmented approaches'
+        ],
+        'Text Summarization': [
+            'Balance abstractive and extractive summaries',
+            'Vary summary lengths and styles',
+            'Include domain-specific terminology',
+            'Evaluate for faithfulness and coherence'
+        ],
+        'Dialogue Systems': [
+            'Maintain conversation context and consistency',
+            'Handle multi-turn interactions gracefully',
+            'Include personality and style guidelines',
+            'Plan for error recovery and clarification'
+        ],
+        'Code Generation': [
+            'Include diverse programming languages',
+            'Focus on correctness and efficiency',
+            'Handle edge cases and error conditions',
+            'Provide clear documentation and comments'
+        ]
+    }
+    
+    for task, considerations in tasks.items():
+        print(f"\n{task}:")
+        for consideration in considerations:
+            print(f"  • {consideration}")
+
+# Run demonstration
+demonstrate_advanced_finetuning()
+```
+
+Supervised fine-tuning represents a crucial phase in the development of practical LLM applications. By carefully curating training data, selecting appropriate training strategies, and applying task-specific optimizations, practitioners can transform general-purpose language models into specialized tools that excel at particular domains or tasks.
+
+The techniques presented in this comprehensive guide—from basic instruction following to advanced parameter-efficient methods—provide a foundation for developing high-quality, task-specific language models. As the field continues to evolve, these supervised fine-tuning approaches will remain essential for creating AI systems that are not only capable but also aligned with human needs and expectations.
+
+The success of supervised fine-tuning ultimately depends on the quality of training data, the appropriateness of the chosen method for the target task, and careful evaluation to ensure the model meets performance and safety requirements. By mastering these techniques, practitioners can unlock the full potential of large language models for real-world applications.

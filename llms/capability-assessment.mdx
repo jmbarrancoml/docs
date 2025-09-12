@@ -1,0 +1,1622 @@
+---
+title: "LLM capability assessment"
+description: "Comprehensive framework for assessing and analyzing the capabilities of large language models, including emergent abilities, capability mapping, and systematic evaluation approaches."
+---
+
+# LLM capability assessment
+
+Understanding and measuring the diverse capabilities of large language models is crucial for both research advancement and practical deployment. This comprehensive guide explores systematic approaches to capability assessment, from basic skill evaluation to complex emergent ability analysis.
+
+## Understanding LLM capabilities
+
+### Capability taxonomy and classification
+
+LLM capabilities span multiple dimensions that require structured assessment frameworks:
+
+```python
+import numpy as np
+from typing import Dict, List, Optional, Tuple, Union, Any
+from dataclasses import dataclass, field
+from enum import Enum
+from abc import ABC, abstractmethod
+import json
+
+class CapabilityCategory(Enum):
+    LANGUAGE_UNDERSTANDING = "language_understanding"
+    LANGUAGE_GENERATION = "language_generation"
+    REASONING = "reasoning"
+    KNOWLEDGE = "knowledge"
+    PROBLEM_SOLVING = "problem_solving"
+    CREATIVITY = "creativity"
+    TOOL_USE = "tool_use"
+    MULTIMODAL = "multimodal"
+    META_COGNITIVE = "meta_cognitive"
+
+class CapabilityLevel(Enum):
+    BASIC = "basic"
+    INTERMEDIATE = "intermediate"  
+    ADVANCED = "advanced"
+    EXPERT = "expert"
+    SUPERHUMAN = "superhuman"
+
+@dataclass
+class Capability:
+    """Definition of a model capability"""
+    name: str
+    category: CapabilityCategory
+    description: str
+    level: CapabilityLevel
+    prerequisites: List[str] = field(default_factory=list)
+    evaluation_methods: List[str] = field(default_factory=list)
+    benchmark_tasks: List[str] = field(default_factory=list)
+    emergent_threshold: Optional[float] = None  # Model size where capability emerges
+
+class CapabilityTaxonomy:
+    """Comprehensive taxonomy of LLM capabilities"""
+    
+    def __init__(self):
+        self.capabilities = {}
+        self.capability_graph = {}  # Dependency graph
+        self._initialize_standard_capabilities()
+    
+    def _initialize_standard_capabilities(self):
+        """Initialize standard LLM capabilities"""
+        
+        # Language Understanding capabilities
+        self.register_capability(Capability(
+            name="text_comprehension",
+            category=CapabilityCategory.LANGUAGE_UNDERSTANDING,
+            description="Understanding and interpreting written text",
+            level=CapabilityLevel.BASIC,
+            evaluation_methods=["reading_comprehension", "question_answering"],
+            benchmark_tasks=["SQuAD", "RACE", "MultiRC"]
+        ))
+        
+        self.register_capability(Capability(
+            name="semantic_understanding",
+            category=CapabilityCategory.LANGUAGE_UNDERSTANDING,
+            description="Understanding meaning and relationships in text",
+            level=CapabilityLevel.INTERMEDIATE,
+            prerequisites=["text_comprehension"],
+            evaluation_methods=["semantic_similarity", "entailment"],
+            benchmark_tasks=["SNLI", "MNLI", "STS"]
+        ))
+        
+        self.register_capability(Capability(
+            name="pragmatic_understanding",
+            category=CapabilityCategory.LANGUAGE_UNDERSTANDING,
+            description="Understanding context, implications, and speaker intent",
+            level=CapabilityLevel.ADVANCED,
+            prerequisites=["semantic_understanding"],
+            evaluation_methods=["context_inference", "implicature_detection"],
+            benchmark_tasks=["CommonsenseQA", "Social IQa"]
+        ))
+        
+        # Language Generation capabilities
+        self.register_capability(Capability(
+            name="fluent_generation",
+            category=CapabilityCategory.LANGUAGE_GENERATION,
+            description="Generating grammatically correct and fluent text",
+            level=CapabilityLevel.BASIC,
+            evaluation_methods=["fluency_rating", "perplexity"],
+            benchmark_tasks=["Penn Treebank", "WikiText"]
+        ))
+        
+        self.register_capability(Capability(
+            name="coherent_generation", 
+            category=CapabilityCategory.LANGUAGE_GENERATION,
+            description="Maintaining coherence across longer texts",
+            level=CapabilityLevel.INTERMEDIATE,
+            prerequisites=["fluent_generation"],
+            evaluation_methods=["coherence_rating", "discourse_analysis"],
+            benchmark_tasks=["CNN/DM", "XSum"]
+        ))
+        
+        self.register_capability(Capability(
+            name="style_adaptation",
+            category=CapabilityCategory.LANGUAGE_GENERATION,
+            description="Adapting writing style to different contexts and audiences",
+            level=CapabilityLevel.ADVANCED,
+            prerequisites=["coherent_generation"],
+            evaluation_methods=["style_transfer", "persona_consistency"],
+            benchmark_tasks=["PersonaChat", "Style Transfer"]
+        ))
+        
+        # Reasoning capabilities
+        self.register_capability(Capability(
+            name="logical_reasoning",
+            category=CapabilityCategory.REASONING,
+            description="Applying logical rules and making valid inferences",
+            level=CapabilityLevel.INTERMEDIATE,
+            evaluation_methods=["logical_inference", "syllogistic_reasoning"],
+            benchmark_tasks=["LogiQA", "ReClor"],
+            emergent_threshold=6e9  # Roughly 6B parameters
+        ))
+        
+        self.register_capability(Capability(
+            name="mathematical_reasoning",
+            category=CapabilityCategory.REASONING,
+            description="Solving mathematical problems and applying mathematical concepts",
+            level=CapabilityLevel.ADVANCED,
+            prerequisites=["logical_reasoning"],
+            evaluation_methods=["math_problem_solving", "proof_generation"],
+            benchmark_tasks=["GSM8K", "MATH", "MathQA"],
+            emergent_threshold=1e11  # Roughly 100B parameters
+        ))
+        
+        self.register_capability(Capability(
+            name="causal_reasoning",
+            category=CapabilityCategory.REASONING,
+            description="Understanding cause-effect relationships",
+            level=CapabilityLevel.ADVANCED,
+            prerequisites=["logical_reasoning"],
+            evaluation_methods=["causal_inference", "counterfactual_reasoning"],
+            benchmark_tasks=["COPA", "Event2Mind"],
+            emergent_threshold=1e10  # Roughly 10B parameters
+        ))
+        
+        # Knowledge capabilities
+        self.register_capability(Capability(
+            name="factual_knowledge",
+            category=CapabilityCategory.KNOWLEDGE,
+            description="Recalling and applying factual information",
+            level=CapabilityLevel.BASIC,
+            evaluation_methods=["fact_recall", "knowledge_probing"],
+            benchmark_tasks=["TriviaQA", "Natural Questions"]
+        ))
+        
+        self.register_capability(Capability(
+            name="world_knowledge",
+            category=CapabilityCategory.KNOWLEDGE,
+            description="Broad knowledge about the world across domains",
+            level=CapabilityLevel.INTERMEDIATE,
+            prerequisites=["factual_knowledge"],
+            evaluation_methods=["knowledge_breadth", "cross_domain_transfer"],
+            benchmark_tasks=["MMLU", "ARC"]
+        ))
+        
+        self.register_capability(Capability(
+            name="specialized_knowledge",
+            category=CapabilityCategory.KNOWLEDGE,
+            description="Deep expertise in specific domains",
+            level=CapabilityLevel.ADVANCED,
+            prerequisites=["world_knowledge"],
+            evaluation_methods=["domain_expertise", "professional_assessment"],
+            benchmark_tasks=["MedQA", "LegalBench", "ScienceQA"]
+        ))
+        
+        # Problem Solving capabilities
+        self.register_capability(Capability(
+            name="algorithmic_thinking",
+            category=CapabilityCategory.PROBLEM_SOLVING,
+            description="Breaking down problems into algorithmic steps",
+            level=CapabilityLevel.INTERMEDIATE,
+            evaluation_methods=["algorithm_design", "step_decomposition"],
+            benchmark_tasks=["HumanEval", "MBPP"]
+        ))
+        
+        self.register_capability(Capability(
+            name="strategic_planning",
+            category=CapabilityCategory.PROBLEM_SOLVING,
+            description="Long-term planning and strategy formation",
+            level=CapabilityLevel.ADVANCED,
+            prerequisites=["algorithmic_thinking"],
+            evaluation_methods=["planning_tasks", "multi_step_reasoning"],
+            benchmark_tasks=["Blocksworld", "StrategyQA"],
+            emergent_threshold=5e10  # Roughly 50B parameters
+        ))
+        
+        # Creativity capabilities
+        self.register_capability(Capability(
+            name="creative_generation",
+            category=CapabilityCategory.CREATIVITY,
+            description="Generating novel and creative content",
+            level=CapabilityLevel.INTERMEDIATE,
+            prerequisites=["coherent_generation"],
+            evaluation_methods=["creativity_rating", "novelty_assessment"],
+            benchmark_tasks=["Creative Writing", "Poetry Generation"]
+        ))
+        
+        self.register_capability(Capability(
+            name="analogical_reasoning",
+            category=CapabilityCategory.CREATIVITY,
+            description="Finding and applying analogies across domains",
+            level=CapabilityLevel.ADVANCED,
+            prerequisites=["creative_generation", "world_knowledge"],
+            evaluation_methods=["analogy_completion", "metaphor_understanding"],
+            benchmark_tasks=["Analogy Questions", "Metaphor Detection"],
+            emergent_threshold=2e10  # Roughly 20B parameters
+        ))
+        
+        # Meta-cognitive capabilities
+        self.register_capability(Capability(
+            name="uncertainty_awareness",
+            category=CapabilityCategory.META_COGNITIVE,
+            description="Recognizing and expressing uncertainty about knowledge",
+            level=CapabilityLevel.ADVANCED,
+            evaluation_methods=["calibration_assessment", "confidence_estimation"],
+            benchmark_tasks=["TruthfulQA", "Calibration Tasks"],
+            emergent_threshold=1e11  # Roughly 100B parameters
+        ))
+        
+        self.register_capability(Capability(
+            name="self_reflection",
+            category=CapabilityCategory.META_COGNITIVE,
+            description="Reflecting on own reasoning and identifying errors",
+            level=CapabilityLevel.EXPERT,
+            prerequisites=["uncertainty_awareness"],
+            evaluation_methods=["self_correction", "error_detection"],
+            emergent_threshold=5e11  # Roughly 500B parameters
+        ))
+    
+    def register_capability(self, capability: Capability):
+        """Register a new capability"""
+        self.capabilities[capability.name] = capability
+        
+        # Build dependency graph
+        if capability.name not in self.capability_graph:
+            self.capability_graph[capability.name] = {'prerequisites': [], 'dependents': []}
+        
+        for prereq in capability.prerequisites:
+            if prereq in self.capability_graph:
+                self.capability_graph[prereq]['dependents'].append(capability.name)
+            self.capability_graph[capability.name]['prerequisites'].append(prereq)
+    
+    def get_capability_path(self, capability_name: str) -> List[str]:
+        """Get the prerequisite path to a capability"""
+        if capability_name not in self.capabilities:
+            return []
+        
+        path = []
+        visited = set()
+        
+        def dfs(cap_name):
+            if cap_name in visited:
+                return
+            visited.add(cap_name)
+            
+            capability = self.capabilities[cap_name]
+            for prereq in capability.prerequisites:
+                dfs(prereq)
+            
+            path.append(cap_name)
+        
+        dfs(capability_name)
+        return path
+    
+    def get_emergent_capabilities(self, model_size: float) -> List[str]:
+        """Get capabilities that should emerge at given model size"""
+        emergent_caps = []
+        
+        for name, capability in self.capabilities.items():
+            if (capability.emergent_threshold is not None and 
+                model_size >= capability.emergent_threshold):
+                emergent_caps.append(name)
+        
+        return emergent_caps
+    
+    def list_capabilities_by_category(self, category: CapabilityCategory) -> List[str]:
+        """List all capabilities in a category"""
+        return [name for name, cap in self.capabilities.items() 
+                if cap.category == category]
+    
+    def export_capability_map(self) -> Dict:
+        """Export complete capability mapping"""
+        return {
+            'capabilities': {
+                name: {
+                    'category': cap.category.value,
+                    'description': cap.description,
+                    'level': cap.level.value,
+                    'prerequisites': cap.prerequisites,
+                    'evaluation_methods': cap.evaluation_methods,
+                    'benchmark_tasks': cap.benchmark_tasks,
+                    'emergent_threshold': cap.emergent_threshold
+                }
+                for name, cap in self.capabilities.items()
+            },
+            'dependency_graph': self.capability_graph
+        }
+```
+
+### Capability measurement framework
+
+```python
+from scipy import stats
+import matplotlib.pyplot as plt
+
+class CapabilityAssessmentFramework:
+    """Framework for systematic capability assessment"""
+    
+    def __init__(self, taxonomy: CapabilityTaxonomy):
+        self.taxonomy = taxonomy
+        self.assessment_results = {}
+        self.model_profiles = {}
+        
+    def assess_capability(self, 
+                         model,
+                         capability_name: str,
+                         test_suite: Dict,
+                         assessment_config: Optional[Dict] = None) -> Dict:
+        """Assess a specific capability of a model"""
+        
+        if capability_name not in self.taxonomy.capabilities:
+            raise ValueError(f"Unknown capability: {capability_name}")
+        
+        capability = self.taxonomy.capabilities[capability_name]
+        config = assessment_config or {}
+        
+        # Run assessment based on capability type
+        if capability.category == CapabilityCategory.LANGUAGE_UNDERSTANDING:
+            results = self._assess_language_understanding(model, test_suite, config)
+        elif capability.category == CapabilityCategory.REASONING:
+            results = self._assess_reasoning(model, test_suite, config)
+        elif capability.category == CapabilityCategory.KNOWLEDGE:
+            results = self._assess_knowledge(model, test_suite, config)
+        elif capability.category == CapabilityCategory.PROBLEM_SOLVING:
+            results = self._assess_problem_solving(model, test_suite, config)
+        elif capability.category == CapabilityCategory.CREATIVITY:
+            results = self._assess_creativity(model, test_suite, config)
+        else:
+            results = self._assess_general_capability(model, test_suite, config)
+        
+        # Add capability metadata
+        results.update({
+            'capability_name': capability_name,
+            'capability_category': capability.category.value,
+            'capability_level': capability.level.value,
+            'prerequisites_met': self._check_prerequisites(capability_name),
+            'assessment_timestamp': pd.Timestamp.now().isoformat()
+        })
+        
+        # Store results
+        if capability_name not in self.assessment_results:
+            self.assessment_results[capability_name] = []
+        self.assessment_results[capability_name].append(results)
+        
+        return results
+    
+    def _assess_language_understanding(self, model, test_suite: Dict, config: Dict) -> Dict:
+        """Assess language understanding capabilities"""
+        
+        results = {
+            'reading_comprehension': self._test_reading_comprehension(model, test_suite.get('reading_comprehension', [])),
+            'semantic_similarity': self._test_semantic_similarity(model, test_suite.get('semantic_similarity', [])),
+            'textual_entailment': self._test_textual_entailment(model, test_suite.get('entailment', [])),
+            'context_understanding': self._test_context_understanding(model, test_suite.get('context', []))
+        }
+        
+        # Calculate overall score
+        scores = [v['score'] for v in results.values() if isinstance(v, dict) and 'score' in v]
+        results['overall_score'] = np.mean(scores) if scores else 0.0
+        
+        return results
+    
+    def _assess_reasoning(self, model, test_suite: Dict, config: Dict) -> Dict:
+        """Assess reasoning capabilities"""
+        
+        results = {
+            'logical_reasoning': self._test_logical_reasoning(model, test_suite.get('logical', [])),
+            'mathematical_reasoning': self._test_mathematical_reasoning(model, test_suite.get('mathematical', [])),
+            'causal_reasoning': self._test_causal_reasoning(model, test_suite.get('causal', [])),
+            'analogical_reasoning': self._test_analogical_reasoning(model, test_suite.get('analogical', []))
+        }
+        
+        # Weight scores by difficulty
+        weighted_scores = []
+        for test_type, result in results.items():
+            if isinstance(result, dict) and 'score' in result:
+                weight = config.get(f'{test_type}_weight', 1.0)
+                weighted_scores.append(result['score'] * weight)
+        
+        results['overall_score'] = np.mean(weighted_scores) if weighted_scores else 0.0
+        results['reasoning_depth'] = self._assess_reasoning_depth(results)
+        
+        return results
+    
+    def _assess_knowledge(self, model, test_suite: Dict, config: Dict) -> Dict:
+        """Assess knowledge capabilities"""
+        
+        results = {
+            'factual_recall': self._test_factual_recall(model, test_suite.get('facts', [])),
+            'world_knowledge': self._test_world_knowledge(model, test_suite.get('world_knowledge', [])),
+            'domain_knowledge': self._test_domain_knowledge(model, test_suite.get('domain_specific', [])),
+            'knowledge_integration': self._test_knowledge_integration(model, test_suite.get('integration', []))
+        }
+        
+        # Assess knowledge breadth and depth
+        results['knowledge_breadth'] = self._assess_knowledge_breadth(results)
+        results['knowledge_depth'] = self._assess_knowledge_depth(results)
+        
+        scores = [v['score'] for v in results.values() if isinstance(v, dict) and 'score' in v]
+        results['overall_score'] = np.mean(scores) if scores else 0.0
+        
+        return results
+    
+    def _assess_problem_solving(self, model, test_suite: Dict, config: Dict) -> Dict:
+        """Assess problem solving capabilities"""
+        
+        results = {
+            'algorithmic_thinking': self._test_algorithmic_thinking(model, test_suite.get('algorithmic', [])),
+            'strategic_planning': self._test_strategic_planning(model, test_suite.get('planning', [])),
+            'creative_problem_solving': self._test_creative_problem_solving(model, test_suite.get('creative_problems', [])),
+            'multi_step_reasoning': self._test_multi_step_reasoning(model, test_suite.get('multi_step', []))
+        }
+        
+        # Assess problem solving strategies
+        results['strategy_diversity'] = self._assess_strategy_diversity(results)
+        results['solution_efficiency'] = self._assess_solution_efficiency(results)
+        
+        scores = [v['score'] for v in results.values() if isinstance(v, dict) and 'score' in v]
+        results['overall_score'] = np.mean(scores) if scores else 0.0
+        
+        return results
+    
+    def _assess_creativity(self, model, test_suite: Dict, config: Dict) -> Dict:
+        """Assess creative capabilities"""
+        
+        results = {
+            'creative_generation': self._test_creative_generation(model, test_suite.get('generation', [])),
+            'divergent_thinking': self._test_divergent_thinking(model, test_suite.get('divergent', [])),
+            'novel_combinations': self._test_novel_combinations(model, test_suite.get('combinations', [])),
+            'artistic_expression': self._test_artistic_expression(model, test_suite.get('artistic', []))
+        }
+        
+        # Creative assessment metrics
+        results['creativity_score'] = self._calculate_creativity_score(results)
+        results['originality'] = self._assess_originality(results)
+        results['appropriateness'] = self._assess_creative_appropriateness(results)
+        
+        scores = [v['score'] for v in results.values() if isinstance(v, dict) and 'score' in v]
+        results['overall_score'] = np.mean(scores) if scores else 0.0
+        
+        return results
+    
+    def _assess_general_capability(self, model, test_suite: Dict, config: Dict) -> Dict:
+        """Generic capability assessment"""
+        
+        results = {
+            'task_performance': self._evaluate_task_performance(model, test_suite),
+            'consistency': self._evaluate_consistency(model, test_suite),
+            'robustness': self._evaluate_robustness(model, test_suite)
+        }
+        
+        scores = [v for v in results.values() if isinstance(v, (int, float))]
+        results['overall_score'] = np.mean(scores) if scores else 0.0
+        
+        return results
+    
+    # Individual test implementations
+    def _test_reading_comprehension(self, model, test_cases: List[Dict]) -> Dict:
+        """Test reading comprehension ability"""
+        if not test_cases:
+            return {'score': 0.0, 'note': 'No test cases provided'}
+        
+        correct = 0
+        total = len(test_cases)
+        response_quality = []
+        
+        for case in test_cases:
+            # Mock evaluation - in practice would use actual model
+            predicted_answer = f"Mock answer for {case.get('question', '')[:20]}"
+            actual_answer = case.get('answer', '')
+            
+            # Simplified scoring
+            score = 1.0 if predicted_answer.lower() in actual_answer.lower() else 0.0
+            correct += score
+            response_quality.append(score)
+        
+        return {
+            'score': correct / total,
+            'accuracy': correct / total,
+            'total_cases': total,
+            'response_quality': np.mean(response_quality),
+            'details': response_quality
+        }
+    
+    def _test_semantic_similarity(self, model, test_cases: List[Dict]) -> Dict:
+        """Test semantic similarity understanding"""
+        if not test_cases:
+            return {'score': 0.0}
+        
+        similarities = []
+        
+        for case in test_cases:
+            # Mock semantic similarity calculation
+            predicted_similarity = np.random.uniform(0, 1)
+            actual_similarity = case.get('similarity', 0.5)
+            
+            # Calculate error
+            error = abs(predicted_similarity - actual_similarity)
+            similarities.append(1.0 - error)  # Convert to score
+        
+        return {
+            'score': np.mean(similarities),
+            'mean_absolute_error': 1.0 - np.mean(similarities),
+            'total_cases': len(test_cases)
+        }
+    
+    def _test_textual_entailment(self, model, test_cases: List[Dict]) -> Dict:
+        """Test textual entailment recognition"""
+        if not test_cases:
+            return {'score': 0.0}
+        
+        correct = 0
+        total = len(test_cases)
+        
+        for case in test_cases:
+            # Mock entailment prediction
+            predicted = np.random.choice(['entailment', 'contradiction', 'neutral'])
+            actual = case.get('label', 'neutral')
+            
+            if predicted == actual:
+                correct += 1
+        
+        return {
+            'score': correct / total,
+            'accuracy': correct / total,
+            'total_cases': total
+        }
+    
+    def _test_logical_reasoning(self, model, test_cases: List[Dict]) -> Dict:
+        """Test logical reasoning capabilities"""
+        if not test_cases:
+            return {'score': 0.0}
+        
+        correct = 0
+        reasoning_steps = []
+        
+        for case in test_cases:
+            # Mock logical reasoning
+            predicted_answer = np.random.choice([True, False])
+            actual_answer = case.get('answer', False)
+            
+            if predicted_answer == actual_answer:
+                correct += 1
+            
+            # Mock reasoning step analysis
+            steps = np.random.randint(1, 5)
+            reasoning_steps.append(steps)
+        
+        return {
+            'score': correct / len(test_cases),
+            'accuracy': correct / len(test_cases),
+            'average_reasoning_steps': np.mean(reasoning_steps),
+            'reasoning_complexity': np.std(reasoning_steps)
+        }
+    
+    def _test_mathematical_reasoning(self, model, test_cases: List[Dict]) -> Dict:
+        """Test mathematical reasoning"""
+        if not test_cases:
+            return {'score': 0.0}
+        
+        correct = 0
+        difficulty_scores = {'easy': [], 'medium': [], 'hard': []}
+        
+        for case in test_cases:
+            # Mock math problem solving
+            predicted = np.random.uniform(0, 100)
+            actual = case.get('answer', 0)
+            difficulty = case.get('difficulty', 'medium')
+            
+            # Check if answer is within reasonable range
+            tolerance = 0.1 * abs(actual) if actual != 0 else 0.1
+            is_correct = abs(predicted - actual) <= tolerance
+            
+            if is_correct:
+                correct += 1
+                difficulty_scores[difficulty].append(1.0)
+            else:
+                difficulty_scores[difficulty].append(0.0)
+        
+        results = {
+            'score': correct / len(test_cases),
+            'accuracy': correct / len(test_cases),
+            'total_problems': len(test_cases)
+        }
+        
+        # Add difficulty breakdown
+        for difficulty, scores in difficulty_scores.items():
+            if scores:
+                results[f'{difficulty}_accuracy'] = np.mean(scores)
+        
+        return results
+    
+    def _check_prerequisites(self, capability_name: str) -> Dict[str, bool]:
+        """Check if prerequisites for a capability are met"""
+        capability = self.taxonomy.capabilities[capability_name]
+        prereq_status = {}
+        
+        for prereq in capability.prerequisites:
+            # Check if we have assessment results for the prerequisite
+            if prereq in self.assessment_results:
+                latest_result = self.assessment_results[prereq][-1]
+                # Consider prerequisite met if score > 0.7
+                prereq_status[prereq] = latest_result.get('overall_score', 0.0) > 0.7
+            else:
+                prereq_status[prereq] = False  # Not assessed yet
+        
+        return prereq_status
+    
+    def _assess_reasoning_depth(self, reasoning_results: Dict) -> float:
+        """Assess the depth of reasoning demonstrated"""
+        
+        depth_indicators = [
+            reasoning_results.get('logical_reasoning', {}).get('average_reasoning_steps', 0),
+            reasoning_results.get('mathematical_reasoning', {}).get('accuracy', 0) * 5,  # Weight by complexity
+            reasoning_results.get('causal_reasoning', {}).get('score', 0) * 3
+        ]
+        
+        return np.mean([x for x in depth_indicators if x > 0])
+    
+    def _assess_knowledge_breadth(self, knowledge_results: Dict) -> float:
+        """Assess breadth of knowledge across domains"""
+        
+        domain_scores = []
+        for test_type, result in knowledge_results.items():
+            if isinstance(result, dict) and 'score' in result:
+                domain_scores.append(result['score'])
+        
+        if not domain_scores:
+            return 0.0
+        
+        # Breadth is measured by consistency across domains
+        mean_score = np.mean(domain_scores)
+        std_score = np.std(domain_scores)
+        
+        # High breadth = high mean, low std
+        breadth_score = mean_score * (1.0 - min(std_score, 0.5))
+        return breadth_score
+    
+    def _assess_knowledge_depth(self, knowledge_results: Dict) -> float:
+        """Assess depth of knowledge in specific domains"""
+        
+        depth_indicators = [
+            knowledge_results.get('domain_knowledge', {}).get('score', 0) * 2,  # Weight domain expertise
+            knowledge_results.get('knowledge_integration', {}).get('score', 0) * 1.5
+        ]
+        
+        return np.mean([x for x in depth_indicators if x > 0])
+
+    # Placeholder implementations for additional test methods
+    def _test_context_understanding(self, model, test_cases: List[Dict]) -> Dict:
+        return {'score': np.random.uniform(0.6, 0.9)}
+    
+    def _test_causal_reasoning(self, model, test_cases: List[Dict]) -> Dict:
+        return {'score': np.random.uniform(0.5, 0.8)}
+    
+    def _test_analogical_reasoning(self, model, test_cases: List[Dict]) -> Dict:
+        return {'score': np.random.uniform(0.4, 0.7)}
+    
+    def _test_factual_recall(self, model, test_cases: List[Dict]) -> Dict:
+        return {'score': np.random.uniform(0.7, 0.95)}
+    
+    def _test_world_knowledge(self, model, test_cases: List[Dict]) -> Dict:
+        return {'score': np.random.uniform(0.6, 0.85)}
+    
+    def _test_domain_knowledge(self, model, test_cases: List[Dict]) -> Dict:
+        return {'score': np.random.uniform(0.5, 0.9)}
+    
+    def _test_knowledge_integration(self, model, test_cases: List[Dict]) -> Dict:
+        return {'score': np.random.uniform(0.4, 0.8)}
+    
+    def _test_algorithmic_thinking(self, model, test_cases: List[Dict]) -> Dict:
+        return {'score': np.random.uniform(0.3, 0.8)}
+    
+    def _test_strategic_planning(self, model, test_cases: List[Dict]) -> Dict:
+        return {'score': np.random.uniform(0.2, 0.7)}
+    
+    def _test_creative_problem_solving(self, model, test_cases: List[Dict]) -> Dict:
+        return {'score': np.random.uniform(0.4, 0.75)}
+    
+    def _test_multi_step_reasoning(self, model, test_cases: List[Dict]) -> Dict:
+        return {'score': np.random.uniform(0.3, 0.8)}
+    
+    def _assess_strategy_diversity(self, results: Dict) -> float:
+        return np.random.uniform(0.3, 0.8)
+    
+    def _assess_solution_efficiency(self, results: Dict) -> float:
+        return np.random.uniform(0.4, 0.9)
+    
+    def _test_creative_generation(self, model, test_cases: List[Dict]) -> Dict:
+        return {'score': np.random.uniform(0.5, 0.85)}
+    
+    def _test_divergent_thinking(self, model, test_cases: List[Dict]) -> Dict:
+        return {'score': np.random.uniform(0.4, 0.8)}
+    
+    def _test_novel_combinations(self, model, test_cases: List[Dict]) -> Dict:
+        return {'score': np.random.uniform(0.3, 0.7)}
+    
+    def _test_artistic_expression(self, model, test_cases: List[Dict]) -> Dict:
+        return {'score': np.random.uniform(0.4, 0.8)}
+    
+    def _calculate_creativity_score(self, results: Dict) -> float:
+        return np.random.uniform(0.4, 0.8)
+    
+    def _assess_originality(self, results: Dict) -> float:
+        return np.random.uniform(0.3, 0.9)
+    
+    def _assess_creative_appropriateness(self, results: Dict) -> float:
+        return np.random.uniform(0.5, 0.9)
+    
+    def _evaluate_task_performance(self, model, test_suite: Dict) -> float:
+        return np.random.uniform(0.5, 0.9)
+    
+    def _evaluate_consistency(self, model, test_suite: Dict) -> float:
+        return np.random.uniform(0.6, 0.95)
+    
+    def _evaluate_robustness(self, model, test_suite: Dict) -> float:
+        return np.random.uniform(0.4, 0.8)
+```
+
+## Emergent capabilities analysis
+
+### Scaling laws and capability emergence
+
+```python
+import matplotlib.pyplot as plt
+from scipy.optimize import curve_fit
+
+class EmergentCapabilityAnalyzer:
+    """Analyze emergent capabilities in language models"""
+    
+    def __init__(self):
+        self.emergence_data = {}
+        self.scaling_functions = {}
+        
+    def track_capability_emergence(self, 
+                                 capability_name: str,
+                                 model_sizes: List[float],
+                                 performance_scores: List[float],
+                                 metadata: Optional[Dict] = None):
+        """Track how a capability emerges across model scales"""
+        
+        if len(model_sizes) != len(performance_scores):
+            raise ValueError("Model sizes and scores must have equal length")
+        
+        self.emergence_data[capability_name] = {
+            'model_sizes': np.array(model_sizes),
+            'performance_scores': np.array(performance_scores),
+            'metadata': metadata or {}
+        }
+        
+        # Fit scaling curve
+        scaling_curve = self._fit_scaling_curve(model_sizes, performance_scores)
+        self.scaling_functions[capability_name] = scaling_curve
+        
+        # Detect emergence characteristics
+        emergence_analysis = self._analyze_emergence_pattern(model_sizes, performance_scores)
+        self.emergence_data[capability_name]['analysis'] = emergence_analysis
+        
+        return emergence_analysis
+    
+    def _fit_scaling_curve(self, 
+                          model_sizes: List[float], 
+                          scores: List[float]) -> Dict:
+        """Fit various scaling curves to the data"""
+        
+        model_sizes = np.array(model_sizes)
+        scores = np.array(scores)
+        
+        # Try different scaling functions
+        scaling_results = {}
+        
+        # Power law: y = a * x^b
+        try:
+            popt, pcov = curve_fit(self._power_law, model_sizes, scores, maxfev=10000)
+            r_squared = self._calculate_r_squared(scores, self._power_law(model_sizes, *popt))
+            scaling_results['power_law'] = {
+                'params': popt,
+                'r_squared': r_squared,
+                'formula': f'y = {popt[0]:.4f} * x^{popt[1]:.4f}'
+            }
+        except:
+            scaling_results['power_law'] = None
+        
+        # Logarithmic: y = a * log(x) + b
+        try:
+            popt, pcov = curve_fit(self._logarithmic, model_sizes, scores, maxfev=10000)
+            r_squared = self._calculate_r_squared(scores, self._logarithmic(model_sizes, *popt))
+            scaling_results['logarithmic'] = {
+                'params': popt,
+                'r_squared': r_squared,
+                'formula': f'y = {popt[0]:.4f} * log(x) + {popt[1]:.4f}'
+            }
+        except:
+            scaling_results['logarithmic'] = None
+        
+        # Sigmoid: y = L / (1 + exp(-k*(x-x0)))
+        try:
+            # Initial guess: L=1, k=1e-10, x0=median size
+            p0 = [1.0, 1e-10, np.median(model_sizes)]
+            popt, pcov = curve_fit(self._sigmoid, model_sizes, scores, p0=p0, maxfev=10000)
+            r_squared = self._calculate_r_squared(scores, self._sigmoid(model_sizes, *popt))
+            scaling_results['sigmoid'] = {
+                'params': popt,
+                'r_squared': r_squared,
+                'formula': f'y = {popt[0]:.4f} / (1 + exp(-{popt[1]:.2e}*(x-{popt[2]:.2e})))'
+            }
+        except:
+            scaling_results['sigmoid'] = None
+        
+        # Find best fit
+        best_fit = None
+        best_r_squared = -1
+        
+        for func_name, result in scaling_results.items():
+            if result and result['r_squared'] > best_r_squared:
+                best_fit = func_name
+                best_r_squared = result['r_squared']
+        
+        return {
+            'fits': scaling_results,
+            'best_fit': best_fit,
+            'best_r_squared': best_r_squared
+        }
+    
+    def _power_law(self, x, a, b):
+        return a * np.power(x, b)
+    
+    def _logarithmic(self, x, a, b):
+        return a * np.log(x) + b
+    
+    def _sigmoid(self, x, L, k, x0):
+        return L / (1 + np.exp(-k * (x - x0)))
+    
+    def _calculate_r_squared(self, y_actual, y_predicted):
+        """Calculate R-squared value"""
+        ss_res = np.sum((y_actual - y_predicted) ** 2)
+        ss_tot = np.sum((y_actual - np.mean(y_actual)) ** 2)
+        return 1 - (ss_res / ss_tot) if ss_tot != 0 else 0
+    
+    def _analyze_emergence_pattern(self, 
+                                 model_sizes: List[float], 
+                                 scores: List[float]) -> Dict:
+        """Analyze the pattern of capability emergence"""
+        
+        model_sizes = np.array(model_sizes)
+        scores = np.array(scores)
+        
+        analysis = {
+            'emergence_detected': False,
+            'emergence_threshold': None,
+            'emergence_sharpness': None,
+            'pattern_type': None
+        }
+        
+        # Calculate gradients to detect sharp transitions
+        if len(scores) > 2:
+            gradients = np.gradient(scores)
+            max_gradient_idx = np.argmax(gradients)
+            max_gradient = gradients[max_gradient_idx]
+            
+            # Detect emergence pattern
+            if max_gradient > 0.1:  # Significant improvement
+                analysis['emergence_detected'] = True
+                analysis['emergence_threshold'] = model_sizes[max_gradient_idx]
+                analysis['emergence_sharpness'] = max_gradient
+                
+                # Classify pattern type
+                if max_gradient > 0.3:
+                    analysis['pattern_type'] = 'sharp_emergence'
+                elif max_gradient > 0.15:
+                    analysis['pattern_type'] = 'gradual_emergence'
+                else:
+                    analysis['pattern_type'] = 'smooth_scaling'
+            else:
+                analysis['pattern_type'] = 'minimal_scaling'
+        
+        # Additional metrics
+        analysis.update({
+            'performance_range': (np.min(scores), np.max(scores)),
+            'performance_variance': np.var(scores),
+            'scaling_efficiency': (scores[-1] - scores[0]) / (model_sizes[-1] - model_sizes[0]) if len(scores) > 1 else 0
+        })
+        
+        return analysis
+    
+    def predict_capability_at_scale(self, 
+                                  capability_name: str,
+                                  target_size: float) -> Dict:
+        """Predict capability performance at a given model size"""
+        
+        if capability_name not in self.scaling_functions:
+            return {'error': f'No scaling data available for {capability_name}'}
+        
+        scaling_info = self.scaling_functions[capability_name]
+        emergence_data = self.emergence_data[capability_name]
+        
+        if scaling_info['best_fit'] is None:
+            return {'error': 'No valid scaling curve found'}
+        
+        best_fit = scaling_info['best_fit']
+        params = scaling_info['fits'][best_fit]['params']
+        
+        # Make prediction
+        if best_fit == 'power_law':
+            prediction = self._power_law(target_size, *params)
+        elif best_fit == 'logarithmic':
+            prediction = self._logarithmic(target_size, *params)
+        elif best_fit == 'sigmoid':
+            prediction = self._sigmoid(target_size, *params)
+        else:
+            return {'error': f'Unknown scaling function: {best_fit}'}
+        
+        # Calculate confidence interval (simplified)
+        historical_errors = []
+        for size, actual_score in zip(emergence_data['model_sizes'], emergence_data['performance_scores']):
+            if best_fit == 'power_law':
+                predicted = self._power_law(size, *params)
+            elif best_fit == 'logarithmic':
+                predicted = self._logarithmic(size, *params)
+            else:  # sigmoid
+                predicted = self._sigmoid(size, *params)
+            
+            error = abs(actual_score - predicted)
+            historical_errors.append(error)
+        
+        mean_error = np.mean(historical_errors)
+        confidence_interval = (prediction - mean_error, prediction + mean_error)
+        
+        return {
+            'predicted_performance': prediction,
+            'confidence_interval': confidence_interval,
+            'scaling_function': best_fit,
+            'r_squared': scaling_info['best_r_squared'],
+            'extrapolation_risk': 'high' if target_size > max(emergence_data['model_sizes']) * 2 else 'low'
+        }
+    
+    def compare_emergence_patterns(self, 
+                                 capability_names: List[str]) -> Dict:
+        """Compare emergence patterns across capabilities"""
+        
+        comparison = {
+            'capabilities': capability_names,
+            'emergence_thresholds': {},
+            'emergence_sharpness': {},
+            'scaling_efficiency': {},
+            'pattern_similarity': {}
+        }
+        
+        for cap_name in capability_names:
+            if cap_name in self.emergence_data:
+                analysis = self.emergence_data[cap_name]['analysis']
+                comparison['emergence_thresholds'][cap_name] = analysis.get('emergence_threshold')
+                comparison['emergence_sharpness'][cap_name] = analysis.get('emergence_sharpness')
+                comparison['scaling_efficiency'][cap_name] = analysis.get('scaling_efficiency')
+        
+        # Calculate pattern similarity
+        for i, cap1 in enumerate(capability_names):
+            for cap2 in capability_names[i+1:]:
+                if cap1 in self.emergence_data and cap2 in self.emergence_data:
+                    similarity = self._calculate_pattern_similarity(cap1, cap2)
+                    comparison['pattern_similarity'][f'{cap1}_vs_{cap2}'] = similarity
+        
+        return comparison
+    
+    def _calculate_pattern_similarity(self, cap1: str, cap2: str) -> float:
+        """Calculate similarity between two emergence patterns"""
+        
+        data1 = self.emergence_data[cap1]
+        data2 = self.emergence_data[cap2]
+        
+        # Find common model sizes for comparison
+        sizes1 = data1['model_sizes']
+        sizes2 = data2['model_sizes']
+        scores1 = data1['performance_scores']
+        scores2 = data2['performance_scores']
+        
+        # Interpolate to common scale if needed
+        common_sizes = np.linspace(
+            max(min(sizes1), min(sizes2)),
+            min(max(sizes1), max(sizes2)),
+            10
+        )
+        
+        interp_scores1 = np.interp(common_sizes, sizes1, scores1)
+        interp_scores2 = np.interp(common_sizes, sizes2, scores2)
+        
+        # Calculate correlation
+        correlation = np.corrcoef(interp_scores1, interp_scores2)[0, 1]
+        
+        return correlation if not np.isnan(correlation) else 0.0
+    
+    def visualize_emergence_patterns(self, 
+                                   capability_names: Optional[List[str]] = None,
+                                   save_path: Optional[str] = None) -> None:
+        """Visualize capability emergence patterns"""
+        
+        if capability_names is None:
+            capability_names = list(self.emergence_data.keys())
+        
+        fig, axes = plt.subplots(2, 2, figsize=(15, 12))
+        axes = axes.flatten()
+        
+        for i, cap_name in enumerate(capability_names[:4]):  # Show up to 4 capabilities
+            if cap_name not in self.emergence_data:
+                continue
+            
+            ax = axes[i]
+            data = self.emergence_data[cap_name]
+            
+            # Plot actual data points
+            ax.scatter(data['model_sizes'], data['performance_scores'], 
+                      alpha=0.7, s=50, label='Actual')
+            
+            # Plot fitted curve if available
+            if cap_name in self.scaling_functions:
+                scaling_info = self.scaling_functions[cap_name]
+                best_fit = scaling_info['best_fit']
+                
+                if best_fit and scaling_info['fits'][best_fit]:
+                    params = scaling_info['fits'][best_fit]['params']
+                    
+                    x_smooth = np.linspace(min(data['model_sizes']), 
+                                         max(data['model_sizes']), 100)
+                    
+                    if best_fit == 'power_law':
+                        y_smooth = self._power_law(x_smooth, *params)
+                    elif best_fit == 'logarithmic':
+                        y_smooth = self._logarithmic(x_smooth, *params)
+                    elif best_fit == 'sigmoid':
+                        y_smooth = self._sigmoid(x_smooth, *params)
+                    
+                    ax.plot(x_smooth, y_smooth, '--', alpha=0.8, 
+                           label=f'{best_fit} fit (R²={scaling_info["best_r_squared"]:.3f})')
+            
+            # Mark emergence threshold if detected
+            analysis = data.get('analysis', {})
+            if analysis.get('emergence_threshold'):
+                ax.axvline(analysis['emergence_threshold'], color='red', 
+                          linestyle=':', alpha=0.7, label='Emergence threshold')
+            
+            ax.set_xlabel('Model Size (Parameters)')
+            ax.set_ylabel('Performance Score')
+            ax.set_title(f'{cap_name.replace("_", " ").title()} Emergence')
+            ax.legend()
+            ax.grid(True, alpha=0.3)
+            ax.set_xscale('log')
+        
+        plt.tight_layout()
+        
+        if save_path:
+            plt.savefig(save_path, dpi=300, bbox_inches='tight')
+        
+        plt.show()
+```
+
+## Comprehensive capability profiling
+
+### Model capability profiles
+
+```python
+class ModelCapabilityProfile:
+    """Comprehensive capability profile for a language model"""
+    
+    def __init__(self, model_name: str, model_metadata: Dict):
+        self.model_name = model_name
+        self.model_metadata = model_metadata
+        self.capability_scores = {}
+        self.strengths = []
+        self.weaknesses = []
+        self.emergent_capabilities = []
+        self.capability_dependencies = {}
+        
+    def add_capability_assessment(self, 
+                                capability_name: str,
+                                assessment_result: Dict):
+        """Add assessment result for a capability"""
+        
+        self.capability_scores[capability_name] = {
+            'overall_score': assessment_result.get('overall_score', 0.0),
+            'detailed_results': assessment_result,
+            'assessment_date': assessment_result.get('assessment_timestamp'),
+            'prerequisites_met': assessment_result.get('prerequisites_met', {})
+        }
+        
+        # Update capability dependencies
+        prereqs_met = assessment_result.get('prerequisites_met', {})
+        if prereqs_met:
+            self.capability_dependencies[capability_name] = prereqs_met
+    
+    def calculate_capability_profile(self) -> Dict:
+        """Calculate comprehensive capability profile"""
+        
+        if not self.capability_scores:
+            return {'error': 'No capability assessments available'}
+        
+        # Group capabilities by category
+        category_scores = {}
+        for cap_name, cap_data in self.capability_scores.items():
+            # This would typically use taxonomy to get category
+            category = self._infer_category(cap_name)
+            
+            if category not in category_scores:
+                category_scores[category] = []
+            
+            category_scores[category].append(cap_data['overall_score'])
+        
+        # Calculate category averages
+        category_averages = {
+            cat: np.mean(scores) 
+            for cat, scores in category_scores.items()
+        }
+        
+        # Identify strengths and weaknesses
+        all_scores = [data['overall_score'] for data in self.capability_scores.values()]
+        score_threshold_high = np.percentile(all_scores, 75)
+        score_threshold_low = np.percentile(all_scores, 25)
+        
+        self.strengths = [
+            cap for cap, data in self.capability_scores.items()
+            if data['overall_score'] >= score_threshold_high
+        ]
+        
+        self.weaknesses = [
+            cap for cap, data in self.capability_scores.items()
+            if data['overall_score'] <= score_threshold_low
+        ]
+        
+        # Detect emergent capabilities (high performance with unmet prerequisites)
+        self.emergent_capabilities = self._detect_emergent_capabilities()
+        
+        profile = {
+            'model_name': self.model_name,
+            'model_metadata': self.model_metadata,
+            'overall_score': np.mean(all_scores),
+            'capability_count': len(self.capability_scores),
+            'category_scores': category_averages,
+            'individual_scores': {
+                cap: data['overall_score'] 
+                for cap, data in self.capability_scores.items()
+            },
+            'strengths': self.strengths,
+            'weaknesses': self.weaknesses,
+            'emergent_capabilities': self.emergent_capabilities,
+            'capability_balance': self._calculate_capability_balance(),
+            'profile_completeness': self._calculate_profile_completeness()
+        }
+        
+        return profile
+    
+    def _infer_category(self, capability_name: str) -> str:
+        """Infer capability category from name (simplified)"""
+        
+        if any(keyword in capability_name for keyword in ['reading', 'understanding', 'comprehension']):
+            return 'language_understanding'
+        elif any(keyword in capability_name for keyword in ['generation', 'writing', 'creation']):
+            return 'language_generation'
+        elif any(keyword in capability_name for keyword in ['reasoning', 'logic', 'math']):
+            return 'reasoning'
+        elif any(keyword in capability_name for keyword in ['knowledge', 'fact', 'recall']):
+            return 'knowledge'
+        elif any(keyword in capability_name for keyword in ['problem', 'solving', 'planning']):
+            return 'problem_solving'
+        elif any(keyword in capability_name for keyword in ['creative', 'artistic', 'novel']):
+            return 'creativity'
+        else:
+            return 'general'
+    
+    def _detect_emergent_capabilities(self) -> List[str]:
+        """Detect capabilities that appear emergent"""
+        
+        emergent = []
+        
+        for cap_name, cap_data in self.capability_scores.items():
+            overall_score = cap_data['overall_score']
+            prereqs_met = cap_data.get('prerequisites_met', {})
+            
+            # High performance despite unmet prerequisites suggests emergence
+            if overall_score > 0.7:  # High performance
+                unmet_prereqs = sum(1 for met in prereqs_met.values() if not met)
+                total_prereqs = len(prereqs_met)
+                
+                if total_prereqs > 0 and unmet_prereqs / total_prereqs > 0.5:
+                    emergent.append(cap_name)
+        
+        return emergent
+    
+    def _calculate_capability_balance(self) -> Dict:
+        """Calculate balance across capability categories"""
+        
+        scores = [data['overall_score'] for data in self.capability_scores.values()]
+        
+        return {
+            'mean_score': np.mean(scores),
+            'score_variance': np.var(scores),
+            'score_range': (np.min(scores), np.max(scores)),
+            'balance_score': 1.0 - (np.std(scores) / np.mean(scores)) if np.mean(scores) > 0 else 0
+        }
+    
+    def _calculate_profile_completeness(self) -> Dict:
+        """Calculate how complete the capability profile is"""
+        
+        # This would compare against a standard capability taxonomy
+        expected_capabilities = [
+            'text_comprehension', 'semantic_understanding', 'fluent_generation',
+            'logical_reasoning', 'factual_knowledge', 'creative_generation'
+        ]
+        
+        assessed_capabilities = set(self.capability_scores.keys())
+        expected_set = set(expected_capabilities)
+        
+        completeness = len(assessed_capabilities & expected_set) / len(expected_set)
+        missing = expected_set - assessed_capabilities
+        
+        return {
+            'completeness_score': completeness,
+            'assessed_count': len(assessed_capabilities),
+            'expected_count': len(expected_set),
+            'missing_capabilities': list(missing)
+        }
+    
+    def compare_with_profile(self, other_profile: 'ModelCapabilityProfile') -> Dict:
+        """Compare this profile with another model profile"""
+        
+        # Find common capabilities
+        common_caps = set(self.capability_scores.keys()) & set(other_profile.capability_scores.keys())
+        
+        if not common_caps:
+            return {'error': 'No common capabilities for comparison'}
+        
+        comparison = {
+            'models': (self.model_name, other_profile.model_name),
+            'common_capabilities': len(common_caps),
+            'capability_comparisons': {},
+            'overall_comparison': {},
+            'advantage_analysis': {}
+        }
+        
+        # Compare each common capability
+        score_differences = []
+        for cap in common_caps:
+            score_self = self.capability_scores[cap]['overall_score']
+            score_other = other_profile.capability_scores[cap]['overall_score']
+            difference = score_self - score_other
+            
+            comparison['capability_comparisons'][cap] = {
+                'self_score': score_self,
+                'other_score': score_other,
+                'difference': difference,
+                'advantage': self.model_name if difference > 0 else other_profile.model_name
+            }
+            
+            score_differences.append(difference)
+        
+        # Overall comparison statistics
+        comparison['overall_comparison'] = {
+            'mean_difference': np.mean(score_differences),
+            'wins': sum(1 for d in score_differences if d > 0),
+            'losses': sum(1 for d in score_differences if d < 0),
+            'ties': sum(1 for d in score_differences if abs(d) < 0.01)
+        }
+        
+        # Analyze advantages
+        self_advantages = [cap for cap, comp in comparison['capability_comparisons'].items() 
+                          if comp['advantage'] == self.model_name and comp['difference'] > 0.1]
+        other_advantages = [cap for cap, comp in comparison['capability_comparisons'].items() 
+                           if comp['advantage'] == other_profile.model_name and comp['difference'] < -0.1]
+        
+        comparison['advantage_analysis'] = {
+            f'{self.model_name}_advantages': self_advantages,
+            f'{other_profile.model_name}_advantages': other_advantages,
+            'significant_differences': len(self_advantages) + len(other_advantages)
+        }
+        
+        return comparison
+    
+    def export_profile(self, format: str = 'json') -> str:
+        """Export capability profile in specified format"""
+        
+        profile = self.calculate_capability_profile()
+        
+        if format == 'json':
+            return json.dumps(profile, indent=2, default=str)
+        elif format == 'csv':
+            return self._export_profile_csv(profile)
+        elif format == 'markdown':
+            return self._export_profile_markdown(profile)
+        else:
+            raise ValueError(f"Unsupported export format: {format}")
+    
+    def _export_profile_csv(self, profile: Dict) -> str:
+        """Export profile as CSV"""
+        
+        lines = ['Capability,Score,Category']
+        
+        for cap_name, score in profile['individual_scores'].items():
+            category = self._infer_category(cap_name)
+            lines.append(f'{cap_name},{score:.3f},{category}')
+        
+        return '\n'.join(lines)
+    
+    def _export_profile_markdown(self, profile: Dict) -> str:
+        """Export profile as Markdown report"""
+        
+        md = f"# {profile['model_name']} Capability Profile\n\n"
+        md += f"**Overall Score:** {profile['overall_score']:.3f}\n"
+        md += f"**Capabilities Assessed:** {profile['capability_count']}\n\n"
+        
+        md += "## Category Scores\n\n"
+        for category, score in profile['category_scores'].items():
+            md += f"- **{category.replace('_', ' ').title()}:** {score:.3f}\n"
+        
+        md += "\n## Strengths\n\n"
+        for strength in profile['strengths']:
+            score = profile['individual_scores'][strength]
+            md += f"- {strength.replace('_', ' ').title()} ({score:.3f})\n"
+        
+        md += "\n## Areas for Improvement\n\n"
+        for weakness in profile['weaknesses']:
+            score = profile['individual_scores'][weakness]
+            md += f"- {weakness.replace('_', ' ').title()} ({score:.3f})\n"
+        
+        if profile['emergent_capabilities']:
+            md += "\n## Emergent Capabilities\n\n"
+            for emergent in profile['emergent_capabilities']:
+                md += f"- {emergent.replace('_', ' ').title()}\n"
+        
+        return md
+
+class CapabilityBenchmarkSuite:
+    """Comprehensive benchmark suite for capability assessment"""
+    
+    def __init__(self, taxonomy: CapabilityTaxonomy):
+        self.taxonomy = taxonomy
+        self.assessment_framework = CapabilityAssessmentFramework(taxonomy)
+        self.test_suites = {}
+        self.model_profiles = {}
+        
+    def register_test_suite(self, 
+                           capability_name: str,
+                           test_suite: Dict):
+        """Register a test suite for a capability"""
+        self.test_suites[capability_name] = test_suite
+    
+    def run_comprehensive_assessment(self, 
+                                   model,
+                                   model_name: str,
+                                   model_metadata: Dict,
+                                   capabilities_to_assess: Optional[List[str]] = None) -> ModelCapabilityProfile:
+        """Run comprehensive capability assessment for a model"""
+        
+        if capabilities_to_assess is None:
+            capabilities_to_assess = list(self.test_suites.keys())
+        
+        # Create model profile
+        profile = ModelCapabilityProfile(model_name, model_metadata)
+        
+        # Assess each capability
+        for capability_name in capabilities_to_assess:
+            if capability_name not in self.test_suites:
+                print(f"Warning: No test suite available for {capability_name}")
+                continue
+            
+            test_suite = self.test_suites[capability_name]
+            
+            try:
+                assessment_result = self.assessment_framework.assess_capability(
+                    model, capability_name, test_suite
+                )
+                
+                profile.add_capability_assessment(capability_name, assessment_result)
+                
+            except Exception as e:
+                print(f"Error assessing {capability_name}: {str(e)}")
+        
+        # Store profile
+        self.model_profiles[model_name] = profile
+        
+        return profile
+    
+    def compare_models(self, 
+                      model_names: List[str]) -> Dict:
+        """Compare multiple models across capabilities"""
+        
+        if len(model_names) < 2:
+            raise ValueError("Need at least 2 models for comparison")
+        
+        # Check that all models have profiles
+        missing_profiles = [name for name in model_names if name not in self.model_profiles]
+        if missing_profiles:
+            raise ValueError(f"Missing profiles for models: {missing_profiles}")
+        
+        # Pairwise comparisons
+        comparisons = {}
+        for i in range(len(model_names)):
+            for j in range(i + 1, len(model_names)):
+                model_a = model_names[i]
+                model_b = model_names[j]
+                
+                profile_a = self.model_profiles[model_a]
+                profile_b = self.model_profiles[model_b]
+                
+                comparison = profile_a.compare_with_profile(profile_b)
+                comparisons[f'{model_a}_vs_{model_b}'] = comparison
+        
+        # Overall ranking
+        overall_ranking = self._calculate_model_ranking(model_names)
+        
+        return {
+            'models': model_names,
+            'pairwise_comparisons': comparisons,
+            'overall_ranking': overall_ranking,
+            'summary': self._generate_comparison_summary(comparisons, overall_ranking)
+        }
+    
+    def _calculate_model_ranking(self, model_names: List[str]) -> List[Dict]:
+        """Calculate overall model ranking"""
+        
+        rankings = []
+        
+        for model_name in model_names:
+            profile = self.model_profiles[model_name]
+            overall_profile = profile.calculate_capability_profile()
+            
+            rankings.append({
+                'model': model_name,
+                'overall_score': overall_profile['overall_score'],
+                'strengths_count': len(overall_profile['strengths']),
+                'weaknesses_count': len(overall_profile['weaknesses']),
+                'emergent_capabilities': len(overall_profile['emergent_capabilities'])
+            })
+        
+        # Sort by overall score
+        rankings.sort(key=lambda x: x['overall_score'], reverse=True)
+        
+        # Add ranks
+        for i, ranking in enumerate(rankings):
+            ranking['rank'] = i + 1
+        
+        return rankings
+    
+    def _generate_comparison_summary(self, 
+                                   comparisons: Dict,
+                                   rankings: List[Dict]) -> Dict:
+        """Generate summary of model comparisons"""
+        
+        # Count wins/losses across all comparisons
+        win_counts = {}
+        for model_ranking in rankings:
+            win_counts[model_ranking['model']] = 0
+        
+        for comparison in comparisons.values():
+            overall_comp = comparison['overall_comparison']
+            models = comparison['models']
+            
+            if overall_comp['mean_difference'] > 0:
+                win_counts[models[0]] += 1
+            elif overall_comp['mean_difference'] < 0:
+                win_counts[models[1]] += 1
+        
+        summary = {
+            'top_model': rankings[0]['model'],
+            'top_score': rankings[0]['overall_score'],
+            'win_counts': win_counts,
+            'most_balanced': min(rankings, key=lambda x: x['weaknesses_count'])['model'],
+            'most_emergent': max(rankings, key=lambda x: x['emergent_capabilities'])['model']
+        }
+        
+        return summary
+
+# Integration with EderSpark Freiya platform
+class FreiyaCapabilityIntegration:
+    """Integration with Freiya platform for scientific capability assessment"""
+    
+    def __init__(self, api_key: str):
+        self.api_key = api_key
+        self.base_url = "https://api.freiya.ederspark.com"
+        
+    def assess_scientific_capabilities(self, 
+                                     model,
+                                     domains: List[str] = None) -> Dict:
+        """Assess scientific knowledge and reasoning capabilities using Freiya"""
+        
+        if domains is None:
+            domains = ['physics', 'biology', 'chemistry', 'mathematics', 'computer_science']
+        
+        scientific_assessment = {
+            'domains_assessed': domains,
+            'domain_scores': {},
+            'cross_domain_reasoning': {},
+            'citation_accuracy': {},
+            'knowledge_currency': {}
+        }
+        
+        for domain in domains:
+            # Mock scientific capability assessment
+            domain_score = self._assess_domain_expertise(model, domain)
+            scientific_assessment['domain_scores'][domain] = domain_score
+            
+            # Assess cross-domain reasoning
+            cross_domain = self._assess_cross_domain_reasoning(model, domain)
+            scientific_assessment['cross_domain_reasoning'][domain] = cross_domain
+            
+            # Assess citation and knowledge currency
+            citation_score = self._assess_citation_accuracy(model, domain)
+            currency_score = self._assess_knowledge_currency(model, domain)
+            
+            scientific_assessment['citation_accuracy'][domain] = citation_score
+            scientific_assessment['knowledge_currency'][domain] = currency_score
+        
+        # Overall scientific capability score
+        overall_scores = list(scientific_assessment['domain_scores'].values())
+        scientific_assessment['overall_scientific_capability'] = np.mean(overall_scores)
+        
+        return scientific_assessment
+    
+    def _assess_domain_expertise(self, model, domain: str) -> float:
+        """Assess expertise in a specific scientific domain"""
+        # Mock implementation - would use actual Freiya API
+        return np.random.uniform(0.6, 0.95)
+    
+    def _assess_cross_domain_reasoning(self, model, domain: str) -> float:
+        """Assess ability to reason across scientific domains"""
+        return np.random.uniform(0.4, 0.8)
+    
+    def _assess_citation_accuracy(self, model, domain: str) -> float:
+        """Assess accuracy of scientific citations and references"""
+        return np.random.uniform(0.5, 0.9)
+    
+    def _assess_knowledge_currency(self, model, domain: str) -> float:
+        """Assess how current the model's knowledge is in the domain"""
+        return np.random.uniform(0.6, 0.9)
+
+def main():
+    """Example usage of capability assessment framework"""
+    
+    # Initialize taxonomy and assessment framework
+    taxonomy = CapabilityTaxonomy()
+    benchmark_suite = CapabilityBenchmarkSuite(taxonomy)
+    
+    # Register test suites (mock data)
+    benchmark_suite.register_test_suite('text_comprehension', {
+        'reading_comprehension': [
+            {'passage': 'Sample passage 1', 'question': 'What is this about?', 'answer': 'Sample answer'},
+            {'passage': 'Sample passage 2', 'question': 'Who is mentioned?', 'answer': 'Sample person'}
+        ]
+    })
+    
+    benchmark_suite.register_test_suite('logical_reasoning', {
+        'logical': [
+            {'premise': 'All A are B', 'conclusion': 'Some B are A', 'answer': True},
+            {'premise': 'No C are D', 'conclusion': 'Some C are D', 'answer': False}
+        ]
+    })
+    
+    # Assess models (mock models)
+    model_a_profile = benchmark_suite.run_comprehensive_assessment(
+        model=None,  # Mock model
+        model_name="Model-A",
+        model_metadata={'parameters': '7B', 'architecture': 'transformer'},
+        capabilities_to_assess=['text_comprehension', 'logical_reasoning']
+    )
+    
+    model_b_profile = benchmark_suite.run_comprehensive_assessment(
+        model=None,  # Mock model
+        model_name="Model-B", 
+        model_metadata={'parameters': '13B', 'architecture': 'transformer'},
+        capabilities_to_assess=['text_comprehension', 'logical_reasoning']
+    )
+    
+    # Compare models
+    comparison = benchmark_suite.compare_models(['Model-A', 'Model-B'])
+    
+    print("Model Capability Assessment Results:")
+    print(f"Top Model: {comparison['summary']['top_model']}")
+    print(f"Top Score: {comparison['summary']['top_score']:.3f}")
+    
+    # Export profiles
+    profile_a_md = model_a_profile.export_profile('markdown')
+    print("\n" + "="*50)
+    print(profile_a_md[:500] + "...")  # Show first 500 characters
+    
+    return benchmark_suite, model_a_profile, model_b_profile
+
+if __name__ == "__main__":
+    suite, profile_a, profile_b = main()
+```
+
+This comprehensive capability assessment framework provides the tools and methodologies needed to systematically evaluate LLM capabilities across multiple dimensions. From basic language understanding to complex emergent abilities, these assessment approaches enable detailed analysis of model strengths, weaknesses, and potential applications.
+
+The integration with EderSpark's Freiya platform adds scientific rigor to capability assessment, enabling evaluation of models' scientific knowledge and reasoning abilities against peer-reviewed research. This multi-faceted approach to capability assessment is essential for understanding and improving large language models in both research and practical deployment contexts.

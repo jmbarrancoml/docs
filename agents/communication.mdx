@@ -1,0 +1,1652 @@
+---
+title: "Agent communication"
+description: "Comprehensive guide to inter-agent communication protocols, message passing systems, language standards, and communication patterns for distributed multi-agent systems."
+---
+
+# Agent communication
+
+Effective communication forms the backbone of multi-agent systems, enabling agents to share information, coordinate actions, and collaborate toward common goals. This comprehensive guide explores communication protocols, messaging standards, and patterns that facilitate robust inter-agent interaction.
+
+## Understanding agent communication
+
+### Communication fundamentals and models
+
+Agent communication encompasses the exchange of information between autonomous agents through structured protocols and standardized languages:
+
+```python
+import asyncio
+import json
+import time
+import uuid
+import hashlib
+import threading
+from typing import Dict, List, Optional, Any, Callable, Tuple, Set, Union
+from dataclasses import dataclass, field, asdict
+from abc import ABC, abstractmethod
+from enum import Enum
+from collections import defaultdict, deque
+import queue
+import socket
+import pickle
+
+class MessageType(Enum):
+    INFORM = "inform"
+    REQUEST = "request"
+    QUERY = "query"
+    REPLY = "reply"
+    PROPOSE = "propose"
+    ACCEPT = "accept"
+    REJECT = "reject"
+    CONFIRM = "confirm"
+    CANCEL = "cancel"
+    SUBSCRIBE = "subscribe"
+    UNSUBSCRIBE = "unsubscribe"
+    BROADCAST = "broadcast"
+
+class Performative(Enum):
+    """FIPA ACL performatives for agent communication"""
+    INFORM = "inform"
+    REQUEST = "request" 
+    QUERY_IF = "query-if"
+    QUERY_REF = "query-ref"
+    CFP = "cfp"  # Call for proposals
+    PROPOSE = "propose"
+    ACCEPT_PROPOSAL = "accept-proposal"
+    REJECT_PROPOSAL = "reject-proposal"
+    AGREE = "agree"
+    REFUSE = "refuse"
+    FAILURE = "failure"
+    CONFIRM = "confirm"
+    DISCONFIRM = "disconfirm"
+    SUBSCRIBE = "subscribe"
+    CANCEL = "cancel"
+
+class CommunicationProtocol(Enum):
+    DIRECT = "direct"
+    PUBLISH_SUBSCRIBE = "publish_subscribe"
+    REQUEST_RESPONSE = "request_response"
+    BROADCAST = "broadcast"
+    MULTICAST = "multicast"
+    BLACKBOARD = "blackboard"
+
+@dataclass
+class AgentMessage:
+    """Standardized agent message structure based on FIPA ACL"""
+    message_id: str
+    performative: Performative
+    sender: str
+    receiver: str
+    content: Any
+    language: str = "json"
+    ontology: str = "default"
+    protocol: str = "fipa-request"
+    conversation_id: Optional[str] = None
+    reply_with: Optional[str] = None
+    in_reply_to: Optional[str] = None
+    timestamp: float = field(default_factory=time.time)
+    reply_by: Optional[float] = None
+    priority: int = 1
+    encoding: str = "utf-8"
+    
+    def __post_init__(self):
+        if not self.message_id:
+            self.message_id = str(uuid.uuid4())
+        if not self.conversation_id:
+            self.conversation_id = str(uuid.uuid4())
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert message to dictionary"""
+        return asdict(self)
+    
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> 'AgentMessage':
+        """Create message from dictionary"""
+        # Convert performative back to enum
+        if isinstance(data.get('performative'), str):
+            data['performative'] = Performative(data['performative'])
+        return cls(**data)
+    
+    def serialize(self) -> bytes:
+        """Serialize message for transmission"""
+        message_dict = self.to_dict()
+        # Convert enum to string for serialization
+        message_dict['performative'] = self.performative.value
+        return json.dumps(message_dict).encode(self.encoding)
+    
+    @classmethod
+    def deserialize(cls, data: bytes) -> 'AgentMessage':
+        """Deserialize message from bytes"""
+        message_dict = json.loads(data.decode('utf-8'))
+        return cls.from_dict(message_dict)
+    
+    def create_reply(self, content: Any, performative: Performative = Performative.INFORM) -> 'AgentMessage':
+        """Create reply message"""
+        return AgentMessage(
+            message_id=str(uuid.uuid4()),
+            performative=performative,
+            sender=self.receiver,  # Swap sender/receiver
+            receiver=self.sender,
+            content=content,
+            conversation_id=self.conversation_id,
+            in_reply_to=self.message_id,
+            protocol=self.protocol,
+            language=self.language,
+            ontology=self.ontology
+        )
+
+class Ontology:
+    """Defines vocabulary and meaning for agent communication"""
+    
+    def __init__(self, name: str):
+        self.name = name
+        self.concepts = {}
+        self.predicates = {}
+        self.actions = {}
+        self.relationships = {}
+        
+    def add_concept(self, name: str, definition: str, properties: Dict[str, Any] = None):
+        """Add concept to ontology"""
+        self.concepts[name] = {
+            'definition': definition,
+            'properties': properties or {},
+            'type': 'concept'
+        }
+    
+    def add_predicate(self, name: str, definition: str, arity: int):
+        """Add predicate to ontology"""
+        self.predicates[name] = {
+            'definition': definition,
+            'arity': arity,
+            'type': 'predicate'
+        }
+    
+    def add_action(self, name: str, definition: str, preconditions: List[str] = None, 
+                  effects: List[str] = None):
+        """Add action to ontology"""
+        self.actions[name] = {
+            'definition': definition,
+            'preconditions': preconditions or [],
+            'effects': effects or [],
+            'type': 'action'
+        }
+    
+    def validate_content(self, content: Any) -> bool:
+        """Validate content against ontology"""
+        # Simplified validation - would be more sophisticated in practice
+        if isinstance(content, dict):
+            for key in content.keys():
+                if key not in self.concepts and key not in self.predicates and key not in self.actions:
+                    return False
+        
+        return True
+    
+    def export_ontology(self) -> Dict[str, Any]:
+        """Export ontology as dictionary"""
+        return {
+            'name': self.name,
+            'concepts': self.concepts,
+            'predicates': self.predicates,
+            'actions': self.actions,
+            'relationships': self.relationships
+        }
+
+class MessageRouter:
+    """Routes messages between agents"""
+    
+    def __init__(self):
+        self.agents = {}  # agent_id -> agent reference
+        self.routing_table = {}  # destination -> next_hop
+        self.message_queues = defaultdict(queue.Queue)
+        self.subscriptions = defaultdict(set)  # topic -> set of subscribers
+        self.blackboard = {}  # Shared blackboard for indirect communication
+        
+    def register_agent(self, agent_id: str, agent_ref: Any):
+        """Register agent with router"""
+        self.agents[agent_id] = agent_ref
+        self.message_queues[agent_id] = queue.Queue()
+    
+    def unregister_agent(self, agent_id: str):
+        """Unregister agent from router"""
+        if agent_id in self.agents:
+            del self.agents[agent_id]
+        if agent_id in self.message_queues:
+            del self.message_queues[agent_id]
+        
+        # Remove from subscriptions
+        for topic, subscribers in self.subscriptions.items():
+            subscribers.discard(agent_id)
+    
+    def route_message(self, message: AgentMessage) -> bool:
+        """Route message to destination"""
+        
+        if message.receiver == "broadcast":
+            return self._broadcast_message(message)
+        elif message.receiver.startswith("topic:"):
+            topic = message.receiver[6:]  # Remove "topic:" prefix
+            return self._publish_to_topic(message, topic)
+        else:
+            return self._direct_message(message)
+    
+    def _direct_message(self, message: AgentMessage) -> bool:
+        """Send direct message to specific agent"""
+        
+        if message.receiver in self.agents:
+            try:
+                self.message_queues[message.receiver].put(message, timeout=1.0)
+                return True
+            except queue.Full:
+                return False
+        
+        return False
+    
+    def _broadcast_message(self, message: AgentMessage) -> bool:
+        """Broadcast message to all agents"""
+        
+        success_count = 0
+        
+        for agent_id in self.agents:
+            if agent_id != message.sender:  # Don't send to sender
+                broadcast_message = AgentMessage(
+                    message_id=str(uuid.uuid4()),
+                    performative=message.performative,
+                    sender=message.sender,
+                    receiver=agent_id,
+                    content=message.content,
+                    conversation_id=message.conversation_id,
+                    protocol=message.protocol
+                )
+                
+                try:
+                    self.message_queues[agent_id].put(broadcast_message, timeout=0.1)
+                    success_count += 1
+                except queue.Full:
+                    continue
+        
+        return success_count > 0
+    
+    def _publish_to_topic(self, message: AgentMessage, topic: str) -> bool:
+        """Publish message to topic subscribers"""
+        
+        if topic not in self.subscriptions:
+            return False
+        
+        success_count = 0
+        subscribers = self.subscriptions[topic].copy()
+        
+        for subscriber_id in subscribers:
+            if subscriber_id != message.sender and subscriber_id in self.agents:
+                topic_message = AgentMessage(
+                    message_id=str(uuid.uuid4()),
+                    performative=message.performative,
+                    sender=message.sender,
+                    receiver=subscriber_id,
+                    content=message.content,
+                    conversation_id=message.conversation_id,
+                    protocol="publish-subscribe"
+                )
+                
+                try:
+                    self.message_queues[subscriber_id].put(topic_message, timeout=0.1)
+                    success_count += 1
+                except queue.Full:
+                    continue
+        
+        return success_count > 0
+    
+    def subscribe_to_topic(self, agent_id: str, topic: str) -> bool:
+        """Subscribe agent to topic"""
+        
+        if agent_id in self.agents:
+            self.subscriptions[topic].add(agent_id)
+            return True
+        
+        return False
+    
+    def unsubscribe_from_topic(self, agent_id: str, topic: str) -> bool:
+        """Unsubscribe agent from topic"""
+        
+        if topic in self.subscriptions:
+            self.subscriptions[topic].discard(agent_id)
+            return True
+        
+        return False
+    
+    def get_message(self, agent_id: str, timeout: float = None) -> Optional[AgentMessage]:
+        """Get message for agent"""
+        
+        if agent_id in self.message_queues:
+            try:
+                return self.message_queues[agent_id].get(timeout=timeout)
+            except queue.Empty:
+                return None
+        
+        return None
+    
+    def post_to_blackboard(self, key: str, value: Any, author: str):
+        """Post information to shared blackboard"""
+        
+        self.blackboard[key] = {
+            'value': value,
+            'author': author,
+            'timestamp': time.time()
+        }
+    
+    def read_from_blackboard(self, key: str) -> Optional[Any]:
+        """Read information from shared blackboard"""
+        
+        if key in self.blackboard:
+            return self.blackboard[key]
+        
+        return None
+    
+    def get_blackboard_keys(self, pattern: str = None) -> List[str]:
+        """Get blackboard keys matching pattern"""
+        
+        if pattern is None:
+            return list(self.blackboard.keys())
+        
+        # Simple pattern matching
+        return [key for key in self.blackboard.keys() if pattern in key]
+
+class ConversationManager:
+    """Manages multi-turn conversations between agents"""
+    
+    def __init__(self):
+        self.conversations = {}
+        self.conversation_protocols = {}
+        
+    def start_conversation(self, initiator: str, responder: str, 
+                          protocol: str, initial_message: AgentMessage) -> str:
+        """Start new conversation"""
+        
+        conversation_id = initial_message.conversation_id
+        
+        self.conversations[conversation_id] = {
+            'participants': [initiator, responder],
+            'protocol': protocol,
+            'messages': [initial_message],
+            'state': 'active',
+            'started': time.time(),
+            'last_activity': time.time()
+        }
+        
+        return conversation_id
+    
+    def add_message_to_conversation(self, message: AgentMessage):
+        """Add message to existing conversation"""
+        
+        if message.conversation_id in self.conversations:
+            conversation = self.conversations[message.conversation_id]
+            conversation['messages'].append(message)
+            conversation['last_activity'] = time.time()
+    
+    def get_conversation_history(self, conversation_id: str) -> Optional[List[AgentMessage]]:
+        """Get conversation message history"""
+        
+        if conversation_id in self.conversations:
+            return self.conversations[conversation_id]['messages']
+        
+        return None
+    
+    def end_conversation(self, conversation_id: str, reason: str = "completed"):
+        """End conversation"""
+        
+        if conversation_id in self.conversations:
+            self.conversations[conversation_id]['state'] = 'ended'
+            self.conversations[conversation_id]['end_reason'] = reason
+            self.conversations[conversation_id]['ended'] = time.time()
+    
+    def get_active_conversations(self, agent_id: str) -> List[str]:
+        """Get active conversations for agent"""
+        
+        active_conversations = []
+        
+        for conv_id, conversation in self.conversations.items():
+            if (agent_id in conversation['participants'] and 
+                conversation['state'] == 'active'):
+                active_conversations.append(conv_id)
+        
+        return active_conversations
+    
+    def cleanup_old_conversations(self, max_age_hours: int = 24):
+        """Clean up old conversations"""
+        
+        current_time = time.time()
+        cutoff_time = current_time - (max_age_hours * 3600)
+        
+        to_remove = []
+        
+        for conv_id, conversation in self.conversations.items():
+            if conversation['last_activity'] < cutoff_time:
+                to_remove.append(conv_id)
+        
+        for conv_id in to_remove:
+            del self.conversations[conv_id]
+        
+        return len(to_remove)
+
+class CommunicationProtocolHandler:
+    """Handles different communication protocols"""
+    
+    def __init__(self):
+        self.protocols = {}
+        self._register_standard_protocols()
+    
+    def _register_standard_protocols(self):
+        """Register standard FIPA protocols"""
+        
+        self.protocols['fipa-request'] = {
+            'name': 'FIPA Request Protocol',
+            'description': 'Simple request-response protocol',
+            'states': ['initial', 'requested', 'responded', 'completed'],
+            'transitions': {
+                'initial': ['requested'],
+                'requested': ['responded', 'failed'],
+                'responded': ['completed'],
+                'failed': ['completed']
+            },
+            'message_types': [Performative.REQUEST, Performative.INFORM, Performative.REFUSE, Performative.FAILURE]
+        }
+        
+        self.protocols['fipa-contract-net'] = {
+            'name': 'FIPA Contract Net Protocol',
+            'description': 'Multi-agent negotiation protocol',
+            'states': ['initial', 'cfp_sent', 'proposals_received', 'proposal_accepted', 'completed'],
+            'transitions': {
+                'initial': ['cfp_sent'],
+                'cfp_sent': ['proposals_received'],
+                'proposals_received': ['proposal_accepted', 'all_rejected'],
+                'proposal_accepted': ['completed'],
+                'all_rejected': ['completed']
+            },
+            'message_types': [Performative.CFP, Performative.PROPOSE, Performative.ACCEPT_PROPOSAL, 
+                            Performative.REJECT_PROPOSAL, Performative.INFORM]
+        }
+        
+        self.protocols['fipa-subscribe'] = {
+            'name': 'FIPA Subscribe Protocol', 
+            'description': 'Subscription-based information sharing',
+            'states': ['initial', 'subscribed', 'receiving', 'unsubscribed'],
+            'transitions': {
+                'initial': ['subscribed'],
+                'subscribed': ['receiving', 'unsubscribed'],
+                'receiving': ['receiving', 'unsubscribed'],
+                'unsubscribed': ['completed']
+            },
+            'message_types': [Performative.SUBSCRIBE, Performative.INFORM, Performative.CANCEL, Performative.CONFIRM]
+        }
+    
+    def validate_protocol_message(self, protocol: str, current_state: str, 
+                                 message: AgentMessage) -> Tuple[bool, str]:
+        """Validate message against protocol state machine"""
+        
+        if protocol not in self.protocols:
+            return False, f"Unknown protocol: {protocol}"
+        
+        protocol_def = self.protocols[protocol]
+        
+        # Check if performative is valid for this protocol
+        if message.performative not in protocol_def['message_types']:
+            return False, f"Invalid performative {message.performative.value} for protocol {protocol}"
+        
+        # Check state transitions (simplified validation)
+        valid_transitions = protocol_def['transitions'].get(current_state, [])
+        
+        # This would be more sophisticated in a real implementation
+        # For now, assume message is valid if performative is in protocol
+        return True, "Valid"
+    
+    def get_next_state(self, protocol: str, current_state: str, 
+                      message: AgentMessage) -> Optional[str]:
+        """Get next state based on message"""
+        
+        if protocol not in self.protocols:
+            return None
+        
+        protocol_def = self.protocols[protocol]
+        
+        # Simplified state transition logic
+        if protocol == 'fipa-request':
+            if message.performative == Performative.REQUEST:
+                return 'requested'
+            elif message.performative == Performative.INFORM:
+                return 'responded' if current_state == 'requested' else 'completed'
+            elif message.performative in [Performative.REFUSE, Performative.FAILURE]:
+                return 'failed'
+        
+        elif protocol == 'fipa-contract-net':
+            if message.performative == Performative.CFP:
+                return 'cfp_sent'
+            elif message.performative == Performative.PROPOSE:
+                return 'proposals_received'
+            elif message.performative == Performative.ACCEPT_PROPOSAL:
+                return 'proposal_accepted'
+            elif message.performative == Performative.REJECT_PROPOSAL:
+                return 'all_rejected'
+        
+        elif protocol == 'fipa-subscribe':
+            if message.performative == Performative.SUBSCRIBE:
+                return 'subscribed'
+            elif message.performative == Performative.INFORM:
+                return 'receiving'
+            elif message.performative == Performative.CANCEL:
+                return 'unsubscribed'
+        
+        return current_state
+
+class NetworkCommunicationManager:
+    """Manages network communication between distributed agents"""
+    
+    def __init__(self, port: int = 0):
+        self.port = port
+        self.socket = None
+        self.connections = {}
+        self.message_handlers = {}
+        self.running = False
+        self.server_thread = None
+        
+    def start_server(self, host: str = 'localhost'):
+        """Start network server for incoming connections"""
+        
+        self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        
+        try:
+            self.socket.bind((host, self.port))
+            if self.port == 0:  # Get assigned port
+                self.port = self.socket.getsockname()[1]
+            
+            self.socket.listen(5)
+            self.running = True
+            
+            self.server_thread = threading.Thread(target=self._server_loop)
+            self.server_thread.daemon = True
+            self.server_thread.start()
+            
+            return True
+            
+        except Exception as e:
+            print(f"Failed to start server: {e}")
+            return False
+    
+    def stop_server(self):
+        """Stop network server"""
+        
+        self.running = False
+        
+        if self.socket:
+            self.socket.close()
+        
+        # Close all connections
+        for conn in self.connections.values():
+            if 'socket' in conn:
+                conn['socket'].close()
+        
+        self.connections.clear()
+    
+    def connect_to_agent(self, agent_id: str, host: str, port: int) -> bool:
+        """Connect to remote agent"""
+        
+        try:
+            client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            client_socket.connect((host, port))
+            
+            self.connections[agent_id] = {
+                'socket': client_socket,
+                'host': host,
+                'port': port,
+                'connected': True
+            }
+            
+            # Start handler thread for this connection
+            handler_thread = threading.Thread(
+                target=self._handle_connection, 
+                args=(client_socket, agent_id)
+            )
+            handler_thread.daemon = True
+            handler_thread.start()
+            
+            return True
+            
+        except Exception as e:
+            print(f"Failed to connect to {agent_id} at {host}:{port}: {e}")
+            return False
+    
+    def send_network_message(self, message: AgentMessage, target_agent: str) -> bool:
+        """Send message over network"""
+        
+        if target_agent not in self.connections:
+            return False
+        
+        connection = self.connections[target_agent]
+        
+        if not connection['connected']:
+            return False
+        
+        try:
+            serialized_message = message.serialize()
+            message_length = len(serialized_message)
+            
+            # Send message length first, then message
+            connection['socket'].sendall(message_length.to_bytes(4, byteorder='big'))
+            connection['socket'].sendall(serialized_message)
+            
+            return True
+            
+        except Exception as e:
+            print(f"Failed to send message to {target_agent}: {e}")
+            connection['connected'] = False
+            return False
+    
+    def register_message_handler(self, handler: Callable[[AgentMessage], None]):
+        """Register handler for incoming network messages"""
+        
+        handler_id = str(uuid.uuid4())
+        self.message_handlers[handler_id] = handler
+        return handler_id
+    
+    def unregister_message_handler(self, handler_id: str):
+        """Unregister message handler"""
+        
+        if handler_id in self.message_handlers:
+            del self.message_handlers[handler_id]
+    
+    def _server_loop(self):
+        """Main server loop for accepting connections"""
+        
+        while self.running:
+            try:
+                client_socket, address = self.socket.accept()
+                
+                # Handle new connection in separate thread
+                handler_thread = threading.Thread(
+                    target=self._handle_connection,
+                    args=(client_socket, f"client_{address[0]}_{address[1]}")
+                )
+                handler_thread.daemon = True
+                handler_thread.start()
+                
+            except Exception as e:
+                if self.running:
+                    print(f"Server error: {e}")
+                break
+    
+    def _handle_connection(self, client_socket: socket.socket, agent_id: str):
+        """Handle individual client connection"""
+        
+        try:
+            while self.running:
+                # Read message length
+                length_data = client_socket.recv(4)
+                if not length_data:
+                    break
+                
+                message_length = int.from_bytes(length_data, byteorder='big')
+                
+                # Read message data
+                message_data = b''
+                while len(message_data) < message_length:
+                    chunk = client_socket.recv(message_length - len(message_data))
+                    if not chunk:
+                        break
+                    message_data += chunk
+                
+                if len(message_data) == message_length:
+                    # Deserialize and handle message
+                    message = AgentMessage.deserialize(message_data)
+                    
+                    # Call registered handlers
+                    for handler in self.message_handlers.values():
+                        try:
+                            handler(message)
+                        except Exception as e:
+                            print(f"Message handler error: {e}")
+                
+        except Exception as e:
+            print(f"Connection handler error: {e}")
+        
+        finally:
+            client_socket.close()
+            if agent_id in self.connections:
+                self.connections[agent_id]['connected'] = False
+
+class CommunicatingAgent:
+    """Base class for agents with communication capabilities"""
+    
+    def __init__(self, agent_id: str, router: MessageRouter):
+        self.agent_id = agent_id
+        self.router = router
+        self.conversation_manager = ConversationManager()
+        self.protocol_handler = CommunicationProtocolHandler()
+        self.ontologies = {}
+        self.subscriptions = set()
+        self.message_handlers = {}
+        self.active_conversations = {}
+        
+        # Register with router
+        self.router.register_agent(agent_id, self)
+        
+        # Default ontology
+        self.default_ontology = self._create_default_ontology()
+        self.ontologies['default'] = self.default_ontology
+    
+    def _create_default_ontology(self) -> Ontology:
+        """Create default ontology for agent communication"""
+        
+        ontology = Ontology("default_agent_ontology")
+        
+        # Add basic concepts
+        ontology.add_concept("task", "A unit of work to be performed")
+        ontology.add_concept("resource", "Something that can be used or consumed")
+        ontology.add_concept("capability", "An ability to perform certain actions")
+        ontology.add_concept("result", "The outcome of performing a task")
+        
+        # Add predicates
+        ontology.add_predicate("has_capability", "Agent has a specific capability", 2)
+        ontology.add_predicate("can_perform", "Agent can perform a task", 2)
+        ontology.add_predicate("requires_resource", "Task requires a resource", 2)
+        
+        # Add actions
+        ontology.add_action("request_task", "Request another agent to perform a task",
+                          ["has_capability(receiver, required_capability)"],
+                          ["task_requested"])
+        
+        return ontology
+    
+    def send_message(self, receiver: str, performative: Performative, 
+                    content: Any, protocol: str = "fipa-request",
+                    conversation_id: str = None) -> bool:
+        """Send message to another agent"""
+        
+        message = AgentMessage(
+            message_id=str(uuid.uuid4()),
+            performative=performative,
+            sender=self.agent_id,
+            receiver=receiver,
+            content=content,
+            protocol=protocol,
+            conversation_id=conversation_id or str(uuid.uuid4())
+        )
+        
+        # Validate message content against ontology
+        if not self._validate_message_content(message):
+            print(f"Message content validation failed for ontology {message.ontology}")
+            return False
+        
+        # Route message
+        success = self.router.route_message(message)
+        
+        if success and conversation_id is None:
+            # Start new conversation if not part of existing one
+            self.conversation_manager.start_conversation(
+                self.agent_id, receiver, protocol, message
+            )
+        
+        return success
+    
+    def receive_messages(self, timeout: float = 1.0) -> List[AgentMessage]:
+        """Receive pending messages"""
+        
+        messages = []
+        
+        while True:
+            message = self.router.get_message(self.agent_id, timeout=0.1)
+            if message is None:
+                break
+            
+            messages.append(message)
+            
+            # Add to conversation
+            self.conversation_manager.add_message_to_conversation(message)
+            
+            # Handle message based on performative
+            self._handle_received_message(message)
+        
+        return messages
+    
+    def subscribe_to_topic(self, topic: str) -> bool:
+        """Subscribe to topic for publish-subscribe communication"""
+        
+        success = self.router.subscribe_to_topic(self.agent_id, topic)
+        
+        if success:
+            self.subscriptions.add(topic)
+        
+        return success
+    
+    def unsubscribe_from_topic(self, topic: str) -> bool:
+        """Unsubscribe from topic"""
+        
+        success = self.router.unsubscribe_from_topic(self.agent_id, topic)
+        
+        if success:
+            self.subscriptions.discard(topic)
+        
+        return success
+    
+    def publish_to_topic(self, topic: str, content: Any) -> bool:
+        """Publish message to topic"""
+        
+        return self.send_message(
+            f"topic:{topic}",
+            Performative.INFORM,
+            content,
+            protocol="publish-subscribe"
+        )
+    
+    def broadcast_message(self, content: Any, performative: Performative = Performative.INFORM) -> bool:
+        """Broadcast message to all agents"""
+        
+        return self.send_message(
+            "broadcast",
+            performative,
+            content,
+            protocol="broadcast"
+        )
+    
+    def request_task(self, target_agent: str, task_description: str, 
+                    requirements: Dict[str, Any] = None) -> str:
+        """Request another agent to perform a task"""
+        
+        conversation_id = str(uuid.uuid4())
+        
+        request_content = {
+            'task_description': task_description,
+            'requirements': requirements or {},
+            'requested_by': self.agent_id,
+            'request_time': time.time()
+        }
+        
+        success = self.send_message(
+            target_agent,
+            Performative.REQUEST,
+            request_content,
+            protocol="fipa-request",
+            conversation_id=conversation_id
+        )
+        
+        if success:
+            self.active_conversations[conversation_id] = {
+                'type': 'task_request',
+                'target': target_agent,
+                'status': 'pending'
+            }
+        
+        return conversation_id if success else None
+    
+    def propose_collaboration(self, target_agent: str, proposal: Dict[str, Any]) -> str:
+        """Propose collaboration to another agent"""
+        
+        conversation_id = str(uuid.uuid4())
+        
+        success = self.send_message(
+            target_agent,
+            Performative.PROPOSE,
+            proposal,
+            protocol="fipa-contract-net",
+            conversation_id=conversation_id
+        )
+        
+        if success:
+            self.active_conversations[conversation_id] = {
+                'type': 'collaboration_proposal',
+                'target': target_agent,
+                'status': 'proposed'
+            }
+        
+        return conversation_id if success else None
+    
+    def register_message_handler(self, performative: Performative, 
+                                handler: Callable[[AgentMessage], Optional[AgentMessage]]):
+        """Register handler for specific message type"""
+        
+        self.message_handlers[performative] = handler
+    
+    def post_to_blackboard(self, key: str, value: Any):
+        """Post information to shared blackboard"""
+        
+        self.router.post_to_blackboard(key, value, self.agent_id)
+    
+    def read_from_blackboard(self, key: str) -> Optional[Any]:
+        """Read information from shared blackboard"""
+        
+        return self.router.read_from_blackboard(key)
+    
+    def search_blackboard(self, pattern: str) -> Dict[str, Any]:
+        """Search blackboard for information"""
+        
+        matching_keys = self.router.get_blackboard_keys(pattern)
+        results = {}
+        
+        for key in matching_keys:
+            results[key] = self.router.read_from_blackboard(key)
+        
+        return results
+    
+    def _validate_message_content(self, message: AgentMessage) -> bool:
+        """Validate message content against ontology"""
+        
+        ontology_name = message.ontology
+        
+        if ontology_name in self.ontologies:
+            ontology = self.ontologies[ontology_name]
+            return ontology.validate_content(message.content)
+        
+        return True  # Accept if ontology not found (permissive)
+    
+    def _handle_received_message(self, message: AgentMessage):
+        """Handle received message based on performative"""
+        
+        # Check if there's a registered handler
+        if message.performative in self.message_handlers:
+            handler = self.message_handlers[message.performative]
+            
+            try:
+                response = handler(message)
+                
+                if response:
+                    self.router.route_message(response)
+                    
+            except Exception as e:
+                print(f"Error in message handler for {message.performative.value}: {e}")
+        
+        else:
+            # Default handling
+            self._default_message_handler(message)
+    
+    def _default_message_handler(self, message: AgentMessage):
+        """Default message handler"""
+        
+        if message.performative == Performative.REQUEST:
+            # Send back a simple acknowledgment
+            response = message.create_reply(
+                {'status': 'received', 'message': 'Request acknowledged'},
+                Performative.INFORM
+            )
+            self.router.route_message(response)
+        
+        elif message.performative == Performative.QUERY_IF:
+            # Handle query
+            response = message.create_reply(
+                {'answer': 'unknown', 'message': 'Query not understood'},
+                Performative.INFORM
+            )
+            self.router.route_message(response)
+        
+        elif message.performative == Performative.PROPOSE:
+            # Handle proposal (default: accept)
+            response = message.create_reply(
+                {'decision': 'accept', 'message': 'Proposal accepted'},
+                Performative.ACCEPT_PROPOSAL
+            )
+            self.router.route_message(response)
+
+# Integration with EderSpark for scientific communication
+class ScientificCommunicationFramework:
+    """Communication framework for scientific multi-agent systems"""
+    
+    def __init__(self, api_key: str = ""):
+        self.api_key = api_key
+        self.router = MessageRouter()
+        self.scientific_ontology = self._create_scientific_ontology()
+        self.research_protocols = {}
+        self.collaboration_networks = {}
+        self.knowledge_sharing_protocols = {}
+        
+    def _create_scientific_ontology(self) -> Ontology:
+        """Create ontology for scientific communication"""
+        
+        ontology = Ontology("scientific_research")
+        
+        # Scientific concepts
+        ontology.add_concept("hypothesis", "A proposed explanation for a phenomenon")
+        ontology.add_concept("experiment", "A scientific procedure to test hypotheses")
+        ontology.add_concept("dataset", "Collection of data for analysis")
+        ontology.add_concept("publication", "Scientific paper or article")
+        ontology.add_concept("peer_review", "Evaluation of work by experts")
+        ontology.add_concept("methodology", "Systematic approach to research")
+        ontology.add_concept("finding", "Result or discovery from research")
+        ontology.add_concept("citation", "Reference to published work")
+        
+        # Scientific predicates
+        ontology.add_predicate("validates", "Evidence validates hypothesis", 2)
+        ontology.add_predicate("contradicts", "Evidence contradicts hypothesis", 2)
+        ontology.add_predicate("cites", "Publication cites another publication", 2)
+        ontology.add_predicate("peer_reviewed", "Work has been peer reviewed", 1)
+        ontology.add_predicate("reproducible", "Results can be reproduced", 1)
+        
+        # Scientific actions
+        ontology.add_action("submit_for_review", "Submit work for peer review",
+                          ["completed_research"], ["under_review"])
+        ontology.add_action("collaborate_on_research", "Collaborate on research project",
+                          ["shared_interests"], ["collaboration_established"])
+        ontology.add_action("share_data", "Share research data",
+                          ["has_data"], ["data_shared"])
+        ontology.add_action("request_citation", "Request citation information",
+                          [], ["citation_provided"])
+        
+        return ontology
+    
+    def create_research_agent(self, agent_id: str, specialization: str) -> 'ScientificAgent':
+        """Create scientific research agent"""
+        
+        agent = ScientificAgent(agent_id, self.router, specialization)
+        agent.ontologies['scientific'] = self.scientific_ontology
+        
+        return agent
+    
+    def setup_research_collaboration_protocol(self, project_id: str, 
+                                            participants: List[str]) -> bool:
+        """Setup communication protocol for research collaboration"""
+        
+        protocol_config = {
+            'project_id': project_id,
+            'participants': participants,
+            'communication_rules': {
+                'data_sharing': 'open_access',
+                'review_process': 'peer_review_required',
+                'publication_rights': 'collaborative_authorship',
+                'dispute_resolution': 'consensus_based'
+            },
+            'message_routing': {
+                'announcements': 'broadcast',
+                'data_updates': 'publish_subscribe',
+                'review_requests': 'direct_message'
+            }
+        }
+        
+        self.research_protocols[project_id] = protocol_config
+        
+        # Setup topic subscriptions
+        for participant in participants:
+            self.router.subscribe_to_topic(participant, f"project_{project_id}_announcements")
+            self.router.subscribe_to_topic(participant, f"project_{project_id}_data_updates")
+        
+        return True
+    
+    def facilitate_peer_review_communication(self, paper_id: str, 
+                                           authors: List[str],
+                                           reviewers: List[str]) -> Dict[str, str]:
+        """Facilitate communication for peer review process"""
+        
+        review_conversations = {}
+        
+        for reviewer in reviewers:
+            # Create conversation between author and reviewer
+            for author in authors:
+                conversation_id = str(uuid.uuid4())
+                
+                # Send review assignment
+                assignment_content = {
+                    'paper_id': paper_id,
+                    'reviewer_assignment': reviewer,
+                    'review_deadline': time.time() + (14 * 24 * 3600),  # 2 weeks
+                    'review_criteria': {
+                        'novelty': 'Assess originality of contribution',
+                        'methodology': 'Evaluate research methods',
+                        'significance': 'Assess impact and importance',
+                        'clarity': 'Evaluate presentation quality'
+                    }
+                }
+                
+                message = AgentMessage(
+                    message_id=str(uuid.uuid4()),
+                    performative=Performative.REQUEST,
+                    sender="review_coordinator",
+                    receiver=reviewer,
+                    content=assignment_content,
+                    protocol="scientific-peer-review",
+                    conversation_id=conversation_id
+                )
+                
+                self.router.route_message(message)
+                review_conversations[f"{author}_{reviewer}"] = conversation_id
+        
+        return review_conversations
+    
+    def coordinate_data_sharing(self, data_provider: str, 
+                              data_requesters: List[str],
+                              dataset_info: Dict[str, Any]) -> bool:
+        """Coordinate data sharing between research agents"""
+        
+        # Create data sharing announcement
+        sharing_announcement = {
+            'dataset_id': dataset_info['id'],
+            'dataset_description': dataset_info['description'],
+            'data_format': dataset_info.get('format', 'unknown'),
+            'access_requirements': dataset_info.get('requirements', {}),
+            'usage_terms': dataset_info.get('terms', 'cite_original_work'),
+            'contact': data_provider
+        }
+        
+        # Broadcast to interested researchers
+        for requester in data_requesters:
+            message = AgentMessage(
+                message_id=str(uuid.uuid4()),
+                performative=Performative.INFORM,
+                sender=data_provider,
+                receiver=requester,
+                content=sharing_announcement,
+                protocol="scientific-data-sharing"
+            )
+            
+            self.router.route_message(message)
+        
+        return True
+    
+    def establish_citation_network(self, research_papers: List[Dict[str, Any]]) -> Dict[str, List[str]]:
+        """Establish citation network communication"""
+        
+        citation_network = {}
+        
+        for paper in research_papers:
+            paper_id = paper['id']
+            citations = paper.get('citations', [])
+            
+            citation_network[paper_id] = citations
+            
+            # Notify cited papers of new citation
+            for cited_paper_id in citations:
+                citation_notification = {
+                    'citing_paper': paper_id,
+                    'citation_context': paper.get('citation_context', {}),
+                    'notification_time': time.time()
+                }
+                
+                message = AgentMessage(
+                    message_id=str(uuid.uuid4()),
+                    performative=Performative.INFORM,
+                    sender=paper_id,
+                    receiver=cited_paper_id,
+                    content=citation_notification,
+                    protocol="citation-notification"
+                )
+                
+                self.router.route_message(message)
+        
+        return citation_network
+
+class ScientificAgent(CommunicatingAgent):
+    """Agent specialized for scientific research communication"""
+    
+    def __init__(self, agent_id: str, router: MessageRouter, specialization: str):
+        super().__init__(agent_id, router)
+        self.specialization = specialization
+        self.research_interests = []
+        self.publications = []
+        self.collaborations = {}
+        self.peer_reviews = {}
+        
+        # Register scientific message handlers
+        self._register_scientific_handlers()
+    
+    def _register_scientific_handlers(self):
+        """Register handlers for scientific communication"""
+        
+        self.register_message_handler(
+            Performative.REQUEST,
+            self._handle_research_request
+        )
+        
+        self.register_message_handler(
+            Performative.PROPOSE,
+            self._handle_collaboration_proposal
+        )
+        
+        self.register_message_handler(
+            Performative.CFP,
+            self._handle_call_for_proposals
+        )
+    
+    def _handle_research_request(self, message: AgentMessage) -> Optional[AgentMessage]:
+        """Handle research-related requests"""
+        
+        request_content = message.content
+        
+        if isinstance(request_content, dict):
+            request_type = request_content.get('type', 'unknown')
+            
+            if request_type == 'peer_review':
+                return self._handle_peer_review_request(message)
+            elif request_type == 'data_sharing':
+                return self._handle_data_sharing_request(message)
+            elif request_type == 'collaboration':
+                return self._handle_collaboration_request(message)
+        
+        # Default response
+        return message.create_reply(
+            {'status': 'received', 'message': 'Research request acknowledged'},
+            Performative.INFORM
+        )
+    
+    def _handle_peer_review_request(self, message: AgentMessage) -> AgentMessage:
+        """Handle peer review request"""
+        
+        review_request = message.content
+        paper_info = review_request.get('paper_info', {})
+        
+        # Check if we can review this paper (based on expertise)
+        can_review = self._can_review_paper(paper_info)
+        
+        if can_review:
+            # Accept review request
+            response_content = {
+                'review_acceptance': True,
+                'estimated_completion': time.time() + (10 * 24 * 3600),  # 10 days
+                'reviewer_qualifications': {
+                    'specialization': self.specialization,
+                    'relevant_publications': len(self.publications),
+                    'experience': 'experienced'  # Would be calculated
+                }
+            }
+            performative = Performative.ACCEPT_PROPOSAL
+        else:
+            # Decline review request
+            response_content = {
+                'review_acceptance': False,
+                'reason': 'outside_expertise_area',
+                'suggested_reviewers': []  # Could suggest other reviewers
+            }
+            performative = Performative.REJECT_PROPOSAL
+        
+        return message.create_reply(response_content, performative)
+    
+    def _handle_data_sharing_request(self, message: AgentMessage) -> AgentMessage:
+        """Handle data sharing request"""
+        
+        request = message.content
+        dataset_id = request.get('dataset_id')
+        
+        # Check if we have the requested dataset
+        has_data = self._has_dataset(dataset_id)
+        
+        if has_data:
+            sharing_terms = {
+                'data_available': True,
+                'access_granted': True,
+                'usage_terms': 'cite_original_work',
+                'format': 'csv',
+                'delivery_method': 'direct_transfer'
+            }
+            performative = Performative.AGREE
+        else:
+            sharing_terms = {
+                'data_available': False,
+                'reason': 'dataset_not_available',
+                'alternative_sources': []  # Could suggest alternatives
+            }
+            performative = Performative.REFUSE
+        
+        return message.create_reply(sharing_terms, performative)
+    
+    def _handle_collaboration_request(self, message: AgentMessage) -> AgentMessage:
+        """Handle collaboration request"""
+        
+        collab_request = message.content
+        project_description = collab_request.get('project_description', '')
+        
+        # Evaluate collaboration opportunity
+        interest_level = self._evaluate_collaboration_interest(collab_request)
+        
+        if interest_level > 0.7:  # High interest
+            response = {
+                'collaboration_interest': True,
+                'interest_level': interest_level,
+                'available_contributions': {
+                    'expertise': self.specialization,
+                    'resources': self._get_available_resources(),
+                    'time_commitment': 'flexible'
+                },
+                'proposed_terms': {
+                    'authorship': 'shared_based_on_contribution',
+                    'data_sharing': 'open_within_collaboration',
+                    'publication_rights': 'joint_decision'
+                }
+            }
+            performative = Performative.ACCEPT_PROPOSAL
+        else:
+            response = {
+                'collaboration_interest': False,
+                'reason': 'limited_alignment_with_research_interests',
+                'interest_level': interest_level
+            }
+            performative = Performative.REJECT_PROPOSAL
+        
+        return message.create_reply(response, performative)
+    
+    def _handle_collaboration_proposal(self, message: AgentMessage) -> Optional[AgentMessage]:
+        """Handle collaboration proposals"""
+        
+        proposal = message.content
+        
+        # Evaluate proposal
+        evaluation = self._evaluate_collaboration_proposal(proposal)
+        
+        if evaluation['accept']:
+            response_content = {
+                'proposal_response': 'accept',
+                'evaluation_score': evaluation['score'],
+                'proposed_modifications': evaluation.get('modifications', [])
+            }
+            performative = Performative.ACCEPT_PROPOSAL
+        else:
+            response_content = {
+                'proposal_response': 'reject',
+                'evaluation_score': evaluation['score'],
+                'rejection_reasons': evaluation.get('reasons', [])
+            }
+            performative = Performative.REJECT_PROPOSAL
+        
+        return message.create_reply(response_content, performative)
+    
+    def _handle_call_for_proposals(self, message: AgentMessage) -> Optional[AgentMessage]:
+        """Handle call for proposals"""
+        
+        cfp_details = message.content
+        
+        # Decide whether to respond to CFP
+        should_respond = self._should_respond_to_cfp(cfp_details)
+        
+        if should_respond:
+            proposal = self._generate_proposal(cfp_details)
+            
+            return message.create_reply(proposal, Performative.PROPOSE)
+        
+        return None  # Don't respond if not interested
+    
+    def submit_paper_for_review(self, paper_info: Dict[str, Any], 
+                               target_journal: str) -> str:
+        """Submit paper for peer review"""
+        
+        conversation_id = str(uuid.uuid4())
+        
+        submission_content = {
+            'type': 'paper_submission',
+            'paper_info': paper_info,
+            'target_journal': target_journal,
+            'submission_time': time.time()
+        }
+        
+        success = self.send_message(
+            target_journal,
+            Performative.REQUEST,
+            submission_content,
+            protocol="scientific-peer-review",
+            conversation_id=conversation_id
+        )
+        
+        if success:
+            self.publications.append({
+                'paper_id': paper_info.get('id'),
+                'status': 'under_review',
+                'conversation_id': conversation_id
+            })
+        
+        return conversation_id if success else None
+    
+    def request_research_data(self, data_provider: str, dataset_id: str, 
+                            intended_use: str) -> str:
+        """Request research data from another agent"""
+        
+        conversation_id = str(uuid.uuid4())
+        
+        data_request = {
+            'type': 'data_sharing',
+            'dataset_id': dataset_id,
+            'intended_use': intended_use,
+            'requestor_credentials': {
+                'specialization': self.specialization,
+                'institution': 'research_institution',  # Would be set appropriately
+                'publications': len(self.publications)
+            }
+        }
+        
+        success = self.send_message(
+            data_provider,
+            Performative.REQUEST,
+            data_request,
+            conversation_id=conversation_id
+        )
+        
+        return conversation_id if success else None
+    
+    def initiate_research_collaboration(self, potential_collaborators: List[str],
+                                      project_description: Dict[str, Any]) -> Dict[str, str]:
+        """Initiate research collaboration with multiple agents"""
+        
+        collaboration_conversations = {}
+        
+        for collaborator in potential_collaborators:
+            conversation_id = str(uuid.uuid4())
+            
+            collaboration_proposal = {
+                'project_description': project_description,
+                'collaboration_type': 'research_project',
+                'proposed_roles': {
+                    self.agent_id: 'lead_researcher',
+                    collaborator: 'co_researcher'
+                },
+                'timeline': project_description.get('timeline', '12_months'),
+                'resource_requirements': project_description.get('resources', {})
+            }
+            
+            success = self.send_message(
+                collaborator,
+                Performative.PROPOSE,
+                collaboration_proposal,
+                protocol="fipa-contract-net",
+                conversation_id=conversation_id
+            )
+            
+            if success:
+                collaboration_conversations[collaborator] = conversation_id
+        
+        return collaboration_conversations
+    
+    # Helper methods
+    def _can_review_paper(self, paper_info: Dict[str, Any]) -> bool:
+        """Check if agent can review a paper"""
+        
+        paper_topics = paper_info.get('topics', [])
+        
+        # Simple check based on specialization
+        return any(topic.lower() in self.specialization.lower() or 
+                  self.specialization.lower() in topic.lower() 
+                  for topic in paper_topics)
+    
+    def _has_dataset(self, dataset_id: str) -> bool:
+        """Check if agent has requested dataset"""
+        # Mock implementation
+        return dataset_id in ['dataset_1', 'dataset_2']  # Would check actual data
+    
+    def _evaluate_collaboration_interest(self, request: Dict[str, Any]) -> float:
+        """Evaluate interest in collaboration"""
+        
+        # Mock evaluation based on description keywords
+        description = request.get('project_description', '').lower()
+        specialization_keywords = self.specialization.lower().split('_')
+        
+        interest_score = sum(1 for keyword in specialization_keywords 
+                           if keyword in description) / len(specialization_keywords)
+        
+        return min(1.0, interest_score + 0.3)  # Base interest of 0.3
+    
+    def _get_available_resources(self) -> List[str]:
+        """Get available resources for collaboration"""
+        return ['computational_resources', 'domain_expertise', 'data_analysis']
+    
+    def _evaluate_collaboration_proposal(self, proposal: Dict[str, Any]) -> Dict[str, Any]:
+        """Evaluate collaboration proposal"""
+        
+        # Mock evaluation
+        score = np.random.uniform(0.3, 0.9)
+        
+        return {
+            'accept': score > 0.6,
+            'score': score,
+            'reasons': ['interesting_research_direction'] if score > 0.6 else ['limited_alignment']
+        }
+    
+    def _should_respond_to_cfp(self, cfp_details: Dict[str, Any]) -> bool:
+        """Decide whether to respond to call for proposals"""
+        
+        # Mock decision based on CFP topic
+        cfp_topic = cfp_details.get('topic', '').lower()
+        return any(keyword in cfp_topic for keyword in self.specialization.lower().split('_'))
+    
+    def _generate_proposal(self, cfp_details: Dict[str, Any]) -> Dict[str, Any]:
+        """Generate proposal for CFP"""
+        
+        return {
+            'proposal_title': f"Research proposal from {self.agent_id}",
+            'approach': f"Novel approach using {self.specialization}",
+            'timeline': '18_months',
+            'budget_estimate': 150000,  # Mock budget
+            'team_qualifications': {
+                'lead_researcher': self.specialization,
+                'publications': len(self.publications)
+            }
+        }
+
+def main():
+    """Example usage of agent communication systems"""
+    
+    print("Agent Communication Demo")
+    print("=" * 50)
+    
+    # Create router and agents
+    router = MessageRouter()
+    
+    # Create communicating agents
+    agent1 = CommunicatingAgent("researcher_alice", router)
+    agent2 = CommunicatingAgent("researcher_bob", router)
+    agent3 = CommunicatingAgent("researcher_carol", router)
+    
+    # Test direct communication
+    print("\n1. Direct Communication")
+    success = agent1.send_message(
+        "researcher_bob",
+        Performative.REQUEST,
+        {"task": "analyze_data", "deadline": time.time() + 3600}
+    )
+    print(f"Message sent: {success}")
+    
+    # Receive messages
+    messages = agent2.receive_messages()
+    print(f"Messages received by Bob: {len(messages)}")
+    
+    if messages:
+        print(f"First message: {messages[0].performative.value} - {messages[0].content}")
+    
+    # Test publish-subscribe
+    print("\n2. Publish-Subscribe Communication")
+    
+    # Subscribe to topics
+    agent1.subscribe_to_topic("research_updates")
+    agent2.subscribe_to_topic("research_updates")
+    
+    # Publish to topic
+    agent3.publish_to_topic("research_updates", {
+        "announcement": "New dataset available",
+        "dataset_id": "ds_2024_001"
+    })
+    
+    # Check subscriptions
+    alice_messages = agent1.receive_messages()
+    bob_messages = agent2.receive_messages()
+    
+    print(f"Alice received {len(alice_messages)} topic messages")
+    print(f"Bob received {len(bob_messages)} topic messages")
+    
+    # Test broadcast
+    print("\n3. Broadcast Communication")
+    agent1.broadcast_message({
+        "type": "system_announcement",
+        "message": "System maintenance scheduled"
+    })
+    
+    # All agents receive broadcast
+    carol_messages = agent3.receive_messages()
+    print(f"Carol received {len(carol_messages)} broadcast messages")
+    
+    # Test blackboard communication
+    print("\n4. Blackboard Communication")
+    
+    # Post to blackboard
+    agent1.post_to_blackboard("shared_results", {
+        "experiment_id": "exp_001",
+        "results": [1, 2, 3, 4, 5],
+        "status": "completed"
+    })
+    
+    # Read from blackboard
+    results = agent2.read_from_blackboard("shared_results")
+    print(f"Bob read from blackboard: {results is not None}")
+    
+    if results:
+        print(f"Results author: {results['author']}")
+    
+    # Search blackboard
+    search_results = agent3.search_blackboard("results")
+    print(f"Carol found {len(search_results)} items matching 'results'")
+    
+    # Test scientific communication
+    print("\n5. Scientific Communication Framework")
+    
+    sci_framework = ScientificCommunicationFramework("mock_api_key")
+    
+    # Create scientific agents
+    sci_agent1 = sci_framework.create_research_agent("dr_smith", "machine_learning")
+    sci_agent2 = sci_framework.create_research_agent("dr_jones", "computational_biology")
+    
+    # Submit paper for review
+    paper_info = {
+        'id': 'paper_001',
+        'title': 'AI Applications in Biology',
+        'topics': ['machine_learning', 'biology'],
+        'authors': ['Dr. Smith']
+    }
+    
+    submission_id = sci_agent1.submit_paper_for_review(paper_info, "journal_of_ai_biology")
+    print(f"Paper submission ID: {submission_id}")
+    
+    # Request research data
+    data_request_id = sci_agent1.request_research_data(
+        "dr_jones",
+        "biological_dataset_001",
+        "training_ml_models"
+    )
+    print(f"Data request ID: {data_request_id}")
+    
+    # Process messages
+    dr_jones_messages = sci_agent2.receive_messages()
+    print(f"Dr. Jones received {len(dr_jones_messages)} scientific messages")
+    
+    # Initiate collaboration
+    collaboration_project = {
+        'title': 'AI-Driven Drug Discovery',
+        'description': 'Using machine learning for drug discovery',
+        'timeline': '24_months',
+        'resources': {'computational': 'high', 'data': 'biological_databases'}
+    }
+    
+    collaboration_conversations = sci_agent1.initiate_research_collaboration(
+        ["dr_jones"], 
+        collaboration_project
+    )
+    
+    print(f"Collaboration conversations: {len(collaboration_conversations)}")
+    
+    # Process collaboration responses
+    dr_jones_collab_messages = sci_agent2.receive_messages()
+    print(f"Dr. Jones received {len(dr_jones_collab_messages)} collaboration messages")
+    
+    return router, sci_framework
+
+if __name__ == "__main__":
+    router, sci_framework = main()
+```
+
+This comprehensive communication framework provides the foundation for sophisticated inter-agent interaction in multi-agent systems. From standardized message formats and routing protocols to specialized scientific communication patterns, these tools enable agents to share information, coordinate activities, and collaborate effectively on complex tasks.
+
+The integration with scientific research demonstrates how fundamental communication mechanisms can be specialized for academic and research contexts, facilitating peer review processes, data sharing, citation networks, and collaborative research projects in multi-agent scientific environments.

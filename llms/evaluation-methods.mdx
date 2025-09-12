@@ -1,0 +1,1390 @@
+---
+title: "LLM evaluation methods"
+description: "Comprehensive guide to evaluating large language models, including metrics, methodologies, and frameworks for assessing model performance, capabilities, and limitations."
+---
+
+# LLM evaluation methods
+
+Evaluating large language models is a critical aspect of AI development that determines model quality, capabilities, and deployment readiness. This comprehensive guide explores the methodologies, metrics, and frameworks used to assess LLMs across various dimensions of performance.
+
+## Understanding LLM evaluation challenges
+
+### Evaluation complexity
+
+LLMs present unique evaluation challenges that differ significantly from traditional machine learning models:
+
+```python
+import torch
+import numpy as np
+from typing import Dict, List, Tuple, Optional
+from dataclasses import dataclass
+from abc import ABC, abstractmethod
+
+@dataclass
+class EvaluationMetric:
+    """Base class for LLM evaluation metrics"""
+    name: str
+    higher_is_better: bool
+    requires_reference: bool
+    domain: str
+    
+class LLMEvaluationFramework:
+    """Comprehensive LLM evaluation framework"""
+    
+    def __init__(self):
+        self.metrics = {}
+        self.evaluators = {}
+        self.benchmarks = {}
+        
+    def register_metric(self, metric: EvaluationMetric, evaluator_fn):
+        """Register a new evaluation metric"""
+        self.metrics[metric.name] = metric
+        self.evaluators[metric.name] = evaluator_fn
+        
+    def evaluate_model(self, model, dataset, metrics: List[str]) -> Dict[str, float]:
+        """Evaluate model on specified metrics"""
+        results = {}
+        
+        for metric_name in metrics:
+            if metric_name not in self.metrics:
+                raise ValueError(f"Unknown metric: {metric_name}")
+                
+            evaluator = self.evaluators[metric_name]
+            score = evaluator(model, dataset)
+            results[metric_name] = score
+            
+        return results
+```
+
+### Multi-dimensional assessment
+
+LLM evaluation requires assessment across multiple dimensions:
+
+- **Performance metrics**: Task-specific accuracy, fluency, and quality
+- **Capability assessment**: Reasoning, knowledge, and skill evaluation  
+- **Robustness testing**: Adversarial inputs and edge cases
+- **Safety evaluation**: Harmful content detection and bias assessment
+- **Efficiency metrics**: Computational cost and resource utilization
+
+## Core evaluation methodologies
+
+### Automatic evaluation metrics
+
+#### Perplexity and language modeling
+
+Perplexity measures how well a model predicts text, serving as a fundamental evaluation metric:
+
+```python
+import math
+from torch.nn import CrossEntropyLoss
+
+class PerplexityEvaluator:
+    """Evaluate model perplexity on text datasets"""
+    
+    def __init__(self, model, tokenizer):
+        self.model = model
+        self.tokenizer = tokenizer
+        self.loss_fn = CrossEntropyLoss(reduction='none')
+        
+    def calculate_perplexity(self, text: str) -> float:
+        """Calculate perplexity for given text"""
+        # Tokenize and prepare input
+        inputs = self.tokenizer(text, return_tensors='pt')
+        input_ids = inputs['input_ids']
+        
+        with torch.no_grad():
+            outputs = self.model(input_ids)
+            logits = outputs.logits
+            
+        # Calculate loss for each token
+        shift_logits = logits[..., :-1, :].contiguous()
+        shift_labels = input_ids[..., 1:].contiguous()
+        
+        losses = self.loss_fn(
+            shift_logits.view(-1, shift_logits.size(-1)),
+            shift_labels.view(-1)
+        )
+        
+        # Calculate perplexity
+        avg_loss = losses.mean().item()
+        perplexity = math.exp(avg_loss)
+        
+        return perplexity
+        
+    def evaluate_dataset(self, dataset: List[str]) -> Dict[str, float]:
+        """Evaluate perplexity across dataset"""
+        perplexities = []
+        
+        for text in dataset:
+            ppl = self.calculate_perplexity(text)
+            perplexities.append(ppl)
+            
+        return {
+            'mean_perplexity': np.mean(perplexities),
+            'median_perplexity': np.median(perplexities),
+            'std_perplexity': np.std(perplexities),
+            'min_perplexity': np.min(perplexities),
+            'max_perplexity': np.max(perplexities)
+        }
+```
+
+#### N-gram based metrics
+
+Traditional metrics like BLEU and ROUGE provide reference-based evaluation:
+
+```python
+from collections import Counter
+import re
+
+class NGramMetrics:
+    """Implementation of BLEU and ROUGE metrics"""
+    
+    @staticmethod
+    def tokenize(text: str) -> List[str]:
+        """Simple tokenization"""
+        return re.findall(r'\w+', text.lower())
+    
+    def calculate_bleu(self, candidate: str, reference: str, n: int = 4) -> float:
+        """Calculate BLEU score"""
+        cand_tokens = self.tokenize(candidate)
+        ref_tokens = self.tokenize(reference)
+        
+        if len(cand_tokens) == 0:
+            return 0.0
+            
+        # Calculate precision for each n-gram order
+        precisions = []
+        for i in range(1, n + 1):
+            cand_ngrams = self._get_ngrams(cand_tokens, i)
+            ref_ngrams = self._get_ngrams(ref_tokens, i)
+            
+            if len(cand_ngrams) == 0:
+                precisions.append(0.0)
+                continue
+                
+            matches = sum((cand_ngrams & ref_ngrams).values())
+            precision = matches / len(cand_ngrams)
+            precisions.append(precision)
+        
+        # Calculate brevity penalty
+        bp = self._brevity_penalty(len(cand_tokens), len(ref_tokens))
+        
+        # Calculate geometric mean
+        if min(precisions) > 0:
+            bleu = bp * np.exp(np.mean(np.log(precisions)))
+        else:
+            bleu = 0.0
+            
+        return bleu
+    
+    def calculate_rouge_l(self, candidate: str, reference: str) -> float:
+        """Calculate ROUGE-L score"""
+        cand_tokens = self.tokenize(candidate)
+        ref_tokens = self.tokenize(reference)
+        
+        lcs_length = self._longest_common_subsequence(cand_tokens, ref_tokens)
+        
+        if len(cand_tokens) == 0 or len(ref_tokens) == 0:
+            return 0.0
+            
+        precision = lcs_length / len(cand_tokens)
+        recall = lcs_length / len(ref_tokens)
+        
+        if precision + recall == 0:
+            return 0.0
+            
+        f1 = 2 * precision * recall / (precision + recall)
+        return f1
+    
+    def _get_ngrams(self, tokens: List[str], n: int) -> Counter:
+        """Extract n-grams from token sequence"""
+        ngrams = []
+        for i in range(len(tokens) - n + 1):
+            ngram = tuple(tokens[i:i + n])
+            ngrams.append(ngram)
+        return Counter(ngrams)
+    
+    def _brevity_penalty(self, cand_len: int, ref_len: int) -> float:
+        """Calculate BLEU brevity penalty"""
+        if cand_len > ref_len:
+            return 1.0
+        elif cand_len == 0:
+            return 0.0
+        else:
+            return np.exp(1 - ref_len / cand_len)
+    
+    def _longest_common_subsequence(self, seq1: List[str], seq2: List[str]) -> int:
+        """Calculate longest common subsequence length"""
+        m, n = len(seq1), len(seq2)
+        dp = [[0] * (n + 1) for _ in range(m + 1)]
+        
+        for i in range(1, m + 1):
+            for j in range(1, n + 1):
+                if seq1[i-1] == seq2[j-1]:
+                    dp[i][j] = dp[i-1][j-1] + 1
+                else:
+                    dp[i][j] = max(dp[i-1][j], dp[i][j-1])
+        
+        return dp[m][n]
+```
+
+### Human evaluation frameworks
+
+#### Expert annotation systems
+
+Human evaluation provides ground truth for model quality assessment:
+
+```python
+import pandas as pd
+from typing import Dict, List, Optional
+from dataclasses import dataclass
+from enum import Enum
+
+class EvaluationDimension(Enum):
+    FLUENCY = "fluency"
+    COHERENCE = "coherence" 
+    RELEVANCE = "relevance"
+    ACCURACY = "accuracy"
+    HELPFULNESS = "helpfulness"
+    SAFETY = "safety"
+
+@dataclass
+class AnnotationTask:
+    """Human annotation task definition"""
+    task_id: str
+    prompt: str
+    model_output: str
+    reference: Optional[str]
+    dimensions: List[EvaluationDimension]
+    scale: Tuple[int, int] = (1, 5)
+
+class HumanEvaluationFramework:
+    """Framework for conducting human evaluation studies"""
+    
+    def __init__(self):
+        self.tasks = []
+        self.annotations = {}
+        self.annotators = {}
+        
+    def create_annotation_task(self, 
+                             prompt: str,
+                             outputs: Dict[str, str],  # model_name -> output
+                             dimensions: List[EvaluationDimension],
+                             reference: Optional[str] = None) -> List[AnnotationTask]:
+        """Create annotation tasks for model comparison"""
+        tasks = []
+        
+        for model_name, output in outputs.items():
+            task = AnnotationTask(
+                task_id=f"{len(self.tasks)}_{model_name}",
+                prompt=prompt,
+                model_output=output,
+                reference=reference,
+                dimensions=dimensions
+            )
+            tasks.append(task)
+            
+        self.tasks.extend(tasks)
+        return tasks
+    
+    def collect_annotations(self, 
+                          task_id: str, 
+                          annotator_id: str,
+                          scores: Dict[EvaluationDimension, int]) -> None:
+        """Collect annotation scores from human evaluators"""
+        if task_id not in self.annotations:
+            self.annotations[task_id] = {}
+            
+        self.annotations[task_id][annotator_id] = scores
+        
+        if annotator_id not in self.annotators:
+            self.annotators[annotator_id] = []
+        self.annotators[annotator_id].append(task_id)
+    
+    def calculate_agreement(self, dimension: EvaluationDimension) -> float:
+        """Calculate inter-annotator agreement using Krippendorff's alpha"""
+        # Collect all annotations for the dimension
+        annotations_by_task = {}
+        
+        for task_id, task_annotations in self.annotations.items():
+            scores = []
+            for annotator_id, scores_dict in task_annotations.items():
+                if dimension in scores_dict:
+                    scores.append(scores_dict[dimension])
+            
+            if len(scores) >= 2:  # Need at least 2 annotators
+                annotations_by_task[task_id] = scores
+        
+        # Calculate Krippendorff's alpha (simplified version)
+        return self._krippendorff_alpha(annotations_by_task)
+    
+    def _krippendorff_alpha(self, annotations: Dict[str, List[int]]) -> float:
+        """Simplified Krippendorff's alpha calculation"""
+        # This is a simplified implementation
+        # For production use, consider using dedicated libraries
+        
+        all_pairs = []
+        for task_scores in annotations.values():
+            for i in range(len(task_scores)):
+                for j in range(i + 1, len(task_scores)):
+                    all_pairs.append((task_scores[i], task_scores[j]))
+        
+        if not all_pairs:
+            return 0.0
+        
+        # Calculate agreement
+        agreements = sum(1 for a, b in all_pairs if a == b)
+        total_pairs = len(all_pairs)
+        
+        observed_agreement = agreements / total_pairs
+        
+        # Calculate expected agreement (simplified)
+        all_scores = [score for scores in annotations.values() 
+                     for score in scores]
+        score_counts = Counter(all_scores)
+        total_scores = len(all_scores)
+        
+        expected_agreement = sum((count / total_scores) ** 2 
+                               for count in score_counts.values())
+        
+        if expected_agreement == 1.0:
+            return 1.0
+        
+        alpha = (observed_agreement - expected_agreement) / (1 - expected_agreement)
+        return max(0.0, alpha)  # Clip to non-negative values
+    
+    def generate_evaluation_report(self) -> Dict:
+        """Generate comprehensive evaluation report"""
+        report = {
+            'task_count': len(self.tasks),
+            'annotator_count': len(self.annotators),
+            'dimension_scores': {},
+            'inter_annotator_agreement': {}
+        }
+        
+        # Calculate average scores per dimension
+        for dimension in EvaluationDimension:
+            scores = []
+            for task_annotations in self.annotations.values():
+                task_scores = [scores_dict.get(dimension, 0) 
+                             for scores_dict in task_annotations.values()]
+                if task_scores:
+                    scores.extend(task_scores)
+            
+            if scores:
+                report['dimension_scores'][dimension.value] = {
+                    'mean': np.mean(scores),
+                    'std': np.std(scores),
+                    'median': np.median(scores)
+                }
+                
+                report['inter_annotator_agreement'][dimension.value] = \
+                    self.calculate_agreement(dimension)
+        
+        return report
+```
+
+### Model-based evaluation
+
+#### LLM-as-judge frameworks
+
+Using stronger models to evaluate other models provides scalable assessment:
+
+```python
+import json
+from typing import Dict, List, Optional
+import requests
+
+class LLMJudgeEvaluator:
+    """Use LLMs as judges for evaluating other model outputs"""
+    
+    def __init__(self, judge_model_name: str = "gpt-4"):
+        self.judge_model = judge_model_name
+        self.evaluation_templates = {}
+        
+    def create_evaluation_prompt(self, 
+                               task_type: str,
+                               prompt: str, 
+                               response: str,
+                               criteria: List[str],
+                               reference: Optional[str] = None) -> str:
+        """Create evaluation prompt for judge model"""
+        
+        base_template = """
+Please evaluate the following response based on the specified criteria.
+
+Task Type: {task_type}
+
+Original Prompt: {prompt}
+
+Response to Evaluate: {response}
+
+{reference_section}
+
+Evaluation Criteria:
+{criteria_list}
+
+For each criterion, provide a score from 1-10 and a brief explanation.
+Then provide an overall score and summary.
+
+Format your response as JSON:
+{{
+    "criterion_scores": {{
+        "criterion_1": {{"score": X, "explanation": "..."}},
+        ...
+    }},
+    "overall_score": X,
+    "summary": "Overall assessment..."
+}}
+"""
+        
+        reference_section = ""
+        if reference:
+            reference_section = f"Reference Answer: {reference}\n"
+        
+        criteria_list = "\n".join([f"- {criterion}" for criterion in criteria])
+        
+        return base_template.format(
+            task_type=task_type,
+            prompt=prompt,
+            response=response,
+            reference_section=reference_section,
+            criteria_list=criteria_list
+        )
+    
+    def evaluate_response(self, 
+                         task_type: str,
+                         prompt: str,
+                         response: str, 
+                         criteria: List[str],
+                         reference: Optional[str] = None) -> Dict:
+        """Evaluate a single response using LLM judge"""
+        
+        evaluation_prompt = self.create_evaluation_prompt(
+            task_type, prompt, response, criteria, reference
+        )
+        
+        # In practice, you would call your LLM API here
+        # This is a mock implementation
+        judge_response = self._query_judge_model(evaluation_prompt)
+        
+        try:
+            evaluation_result = json.loads(judge_response)
+            return evaluation_result
+        except json.JSONDecodeError:
+            return {"error": "Failed to parse judge response", "raw_response": judge_response}
+    
+    def _query_judge_model(self, prompt: str) -> str:
+        """Query the judge model (mock implementation)"""
+        # In a real implementation, this would call an API like OpenAI's
+        # For demo purposes, return a mock response
+        
+        mock_response = {
+            "criterion_scores": {
+                "accuracy": {"score": 8, "explanation": "Response is factually correct"},
+                "clarity": {"score": 7, "explanation": "Generally clear but could be more concise"},
+                "helpfulness": {"score": 9, "explanation": "Very helpful and actionable"}
+            },
+            "overall_score": 8,
+            "summary": "Strong response with accurate information and good helpfulness"
+        }
+        
+        return json.dumps(mock_response)
+    
+    def batch_evaluate(self, 
+                      evaluations: List[Dict]) -> List[Dict]:
+        """Evaluate multiple responses in batch"""
+        results = []
+        
+        for eval_item in evaluations:
+            result = self.evaluate_response(**eval_item)
+            results.append(result)
+            
+        return results
+```
+
+## Task-specific evaluation methods
+
+### Question answering evaluation
+
+#### Exact match and F1 scoring
+
+For factual QA tasks, exact match and token-level F1 provide precise evaluation:
+
+```python
+import string
+from collections import Counter
+
+class QAEvaluator:
+    """Evaluation metrics for question answering tasks"""
+    
+    @staticmethod
+    def normalize_answer(answer: str) -> str:
+        """Normalize answer for comparison"""
+        # Remove punctuation and extra whitespace
+        answer = ''.join(char for char in answer if char not in string.punctuation)
+        answer = ' '.join(answer.split())
+        return answer.lower()
+    
+    def exact_match_score(self, prediction: str, ground_truth: str) -> float:
+        """Calculate exact match score"""
+        pred_normalized = self.normalize_answer(prediction)
+        gt_normalized = self.normalize_answer(ground_truth)
+        return float(pred_normalized == gt_normalized)
+    
+    def f1_score(self, prediction: str, ground_truth: str) -> float:
+        """Calculate F1 score at token level"""
+        pred_tokens = self.normalize_answer(prediction).split()
+        gt_tokens = self.normalize_answer(ground_truth).split()
+        
+        if not pred_tokens and not gt_tokens:
+            return 1.0
+        if not pred_tokens or not gt_tokens:
+            return 0.0
+        
+        pred_counter = Counter(pred_tokens)
+        gt_counter = Counter(gt_tokens)
+        
+        # Calculate overlap
+        overlap = sum((pred_counter & gt_counter).values())
+        
+        # Calculate precision and recall
+        precision = overlap / len(pred_tokens)
+        recall = overlap / len(gt_tokens)
+        
+        if precision + recall == 0:
+            return 0.0
+        
+        f1 = 2 * precision * recall / (precision + recall)
+        return f1
+    
+    def evaluate_qa_dataset(self, predictions: List[str], 
+                           ground_truths: List[str]) -> Dict[str, float]:
+        """Evaluate entire QA dataset"""
+        if len(predictions) != len(ground_truths):
+            raise ValueError("Predictions and ground truths must have same length")
+        
+        em_scores = []
+        f1_scores = []
+        
+        for pred, gt in zip(predictions, ground_truths):
+            em_scores.append(self.exact_match_score(pred, gt))
+            f1_scores.append(self.f1_score(pred, gt))
+        
+        return {
+            'exact_match': np.mean(em_scores),
+            'f1': np.mean(f1_scores),
+            'total_examples': len(predictions)
+        }
+```
+
+### Code generation evaluation
+
+#### Execution-based evaluation
+
+For code generation tasks, execution success provides the most reliable evaluation:
+
+```python
+import subprocess
+import tempfile
+import os
+from typing import Dict, List, Optional
+
+class CodeEvaluator:
+    """Evaluation framework for code generation tasks"""
+    
+    def __init__(self, timeout: int = 10):
+        self.timeout = timeout
+        self.supported_languages = {
+            'python': {'extension': '.py', 'executor': 'python'},
+            'javascript': {'extension': '.js', 'executor': 'node'},
+            'java': {'extension': '.java', 'executor': 'java'}
+        }
+    
+    def evaluate_code_execution(self, 
+                              code: str, 
+                              test_cases: List[Dict],
+                              language: str = 'python') -> Dict:
+        """Evaluate code by running test cases"""
+        
+        if language not in self.supported_languages:
+            return {'error': f'Unsupported language: {language}'}
+        
+        lang_config = self.supported_languages[language]
+        results = {
+            'passed_tests': 0,
+            'total_tests': len(test_cases),
+            'test_results': [],
+            'compilation_error': None,
+            'runtime_errors': []
+        }
+        
+        # Create temporary file for code
+        with tempfile.NamedTemporaryFile(
+            mode='w', 
+            suffix=lang_config['extension'],
+            delete=False
+        ) as temp_file:
+            temp_file.write(code)
+            temp_file_path = temp_file.name
+        
+        try:
+            # Run each test case
+            for i, test_case in enumerate(test_cases):
+                test_result = self._run_single_test(
+                    temp_file_path, 
+                    test_case, 
+                    lang_config['executor']
+                )
+                
+                results['test_results'].append(test_result)
+                if test_result['passed']:
+                    results['passed_tests'] += 1
+                else:
+                    results['runtime_errors'].append({
+                        'test_index': i,
+                        'error': test_result.get('error', 'Unknown error')
+                    })
+        
+        finally:
+            # Clean up temporary file
+            os.unlink(temp_file_path)
+        
+        results['pass_rate'] = results['passed_tests'] / results['total_tests']
+        return results
+    
+    def _run_single_test(self, 
+                        code_file: str, 
+                        test_case: Dict,
+                        executor: str) -> Dict:
+        """Run a single test case"""
+        
+        # Prepare test input
+        test_input = test_case.get('input', '')
+        expected_output = test_case.get('expected_output', '')
+        
+        try:
+            # Execute code
+            process = subprocess.run(
+                [executor, code_file],
+                input=test_input,
+                capture_output=True,
+                text=True,
+                timeout=self.timeout
+            )
+            
+            actual_output = process.stdout.strip()
+            
+            # Compare outputs
+            passed = (actual_output == expected_output.strip())
+            
+            result = {
+                'passed': passed,
+                'expected_output': expected_output,
+                'actual_output': actual_output,
+                'execution_time': None  # Could be measured if needed
+            }
+            
+            if process.stderr:
+                result['stderr'] = process.stderr
+            
+            if not passed:
+                result['error'] = f"Output mismatch. Expected: '{expected_output}', Got: '{actual_output}'"
+            
+            return result
+            
+        except subprocess.TimeoutExpired:
+            return {
+                'passed': False,
+                'error': f'Code execution timed out after {self.timeout} seconds'
+            }
+        except Exception as e:
+            return {
+                'passed': False,
+                'error': f'Execution error: {str(e)}'
+            }
+    
+    def evaluate_code_quality(self, code: str, language: str = 'python') -> Dict:
+        """Evaluate code quality metrics"""
+        
+        if language == 'python':
+            return self._evaluate_python_quality(code)
+        else:
+            return {'error': f'Quality evaluation not implemented for {language}'}
+    
+    def _evaluate_python_quality(self, code: str) -> Dict:
+        """Evaluate Python code quality"""
+        metrics = {
+            'line_count': len(code.split('\n')),
+            'character_count': len(code),
+            'has_comments': '#' in code,
+            'has_docstrings': '"""' in code or "'''" in code,
+            'complexity_score': self._calculate_cyclomatic_complexity(code)
+        }
+        
+        return metrics
+    
+    def _calculate_cyclomatic_complexity(self, code: str) -> int:
+        """Simple cyclomatic complexity calculation"""
+        # Count decision points
+        decision_keywords = ['if', 'elif', 'while', 'for', 'and', 'or', 'except']
+        complexity = 1  # Base complexity
+        
+        for keyword in decision_keywords:
+            complexity += code.count(keyword)
+        
+        return complexity
+```
+
+## Advanced evaluation frameworks
+
+### Capability-specific evaluation
+
+#### Mathematical reasoning assessment
+
+For mathematical capabilities, we need specialized evaluation frameworks:
+
+```python
+import re
+import sympy
+from typing import Dict, List, Optional
+
+class MathEvaluator:
+    """Evaluation framework for mathematical reasoning"""
+    
+    def __init__(self):
+        self.math_patterns = {
+            'arithmetic': r'[-+]?\d*\.?\d+\s*[+\-*/]\s*[-+]?\d*\.?\d+',
+            'algebra': r'[a-zA-Z]\s*[=+\-*/]\s*',
+            'calculus': r'(derivative|integral|limit|∫|∂|lim)',
+            'geometry': r'(triangle|circle|angle|area|volume)'
+        }
+    
+    def extract_mathematical_expressions(self, text: str) -> List[str]:
+        """Extract mathematical expressions from text"""
+        expressions = []
+        
+        # Look for expressions in various formats
+        patterns = [
+            r'\$([^$]+)\$',  # LaTeX inline math
+            r'\$\$([^$]+)\$\$',  # LaTeX display math
+            r'\\begin\{equation\}(.*?)\\end\{equation\}',  # LaTeX equations
+            r'(?:^|\s)([0-9+\-*/().\s=]+)(?:\s|$)'  # Simple arithmetic
+        ]
+        
+        for pattern in patterns:
+            matches = re.findall(pattern, text, re.MULTILINE | re.DOTALL)
+            expressions.extend(matches)
+        
+        return expressions
+    
+    def evaluate_arithmetic_accuracy(self, 
+                                   problem: str, 
+                                   solution: str) -> Dict:
+        """Evaluate arithmetic problem solution"""
+        
+        # Extract numerical answer from problem and solution
+        problem_numbers = re.findall(r'-?\d*\.?\d+', problem)
+        solution_numbers = re.findall(r'-?\d*\.?\d+', solution)
+        
+        if not solution_numbers:
+            return {'error': 'No numerical answer found in solution'}
+        
+        predicted_answer = float(solution_numbers[-1])  # Last number as answer
+        
+        # Try to compute correct answer
+        try:
+            # Simple evaluation for arithmetic expressions
+            arithmetic_expr = re.search(r'[-+]?\d*\.?\d+[\s+\-*/().\d]*', problem)
+            if arithmetic_expr:
+                expr = arithmetic_expr.group().strip()
+                # Safe evaluation
+                correct_answer = eval(expr)  # Note: Use ast.literal_eval in production
+                
+                accuracy = abs(predicted_answer - correct_answer) < 1e-6
+                
+                return {
+                    'correct_answer': correct_answer,
+                    'predicted_answer': predicted_answer,
+                    'accuracy': accuracy,
+                    'absolute_error': abs(predicted_answer - correct_answer)
+                }
+        except:
+            pass
+        
+        return {'error': 'Could not compute correct answer'}
+    
+    def evaluate_symbolic_math(self, 
+                              problem: str, 
+                              solution: str) -> Dict:
+        """Evaluate symbolic mathematics solutions"""
+        
+        try:
+            # Extract mathematical expressions
+            problem_exprs = self.extract_mathematical_expressions(problem)
+            solution_exprs = self.extract_mathematical_expressions(solution)
+            
+            if not solution_exprs:
+                return {'error': 'No mathematical expressions found in solution'}
+            
+            # Try to parse and compare using SymPy
+            results = []
+            for expr_str in solution_exprs:
+                try:
+                    expr = sympy.sympify(expr_str)
+                    results.append({
+                        'expression': expr_str,
+                        'parsed': str(expr),
+                        'simplified': str(sympy.simplify(expr))
+                    })
+                except:
+                    results.append({
+                        'expression': expr_str,
+                        'error': 'Could not parse expression'
+                    })
+            
+            return {'expressions': results}
+            
+        except Exception as e:
+            return {'error': f'Symbolic evaluation failed: {str(e)}'}
+    
+    def classify_math_domain(self, problem: str) -> List[str]:
+        """Classify mathematical domain of the problem"""
+        domains = []
+        
+        for domain, pattern in self.math_patterns.items():
+            if re.search(pattern, problem, re.IGNORECASE):
+                domains.append(domain)
+        
+        return domains if domains else ['general']
+```
+
+### Safety and alignment evaluation
+
+#### Harmful content detection
+
+Safety evaluation is crucial for responsible AI deployment:
+
+```python
+import re
+from typing import Dict, List, Set
+
+class SafetyEvaluator:
+    """Framework for evaluating AI safety and alignment"""
+    
+    def __init__(self):
+        self.harmful_categories = {
+            'violence': [
+                'violence', 'kill', 'murder', 'harm', 'hurt', 'attack',
+                'weapon', 'gun', 'knife', 'bomb', 'explosive'
+            ],
+            'hate_speech': [
+                'hate', 'racist', 'sexist', 'discrimination', 'slur',
+                'offensive', 'derogatory', 'prejudice'
+            ],
+            'illegal_activity': [
+                'illegal', 'crime', 'steal', 'fraud', 'hack', 'piracy',
+                'drugs', 'trafficking', 'money laundering'
+            ],
+            'self_harm': [
+                'suicide', 'self-harm', 'cutting', 'overdose', 'poison'
+            ],
+            'misinformation': [
+                'conspiracy', 'fake news', 'hoax', 'false information',
+                'propaganda', 'misleading'
+            ]
+        }
+        
+        self.bias_indicators = {
+            'gender': ['he/she', 'man/woman', 'male/female'],
+            'race': ['race', 'ethnicity', 'nationality', 'skin color'],
+            'religion': ['religion', 'faith', 'belief', 'god'],
+            'age': ['young', 'old', 'elderly', 'teenager'],
+            'disability': ['disabled', 'handicapped', 'impaired']
+        }
+    
+    def detect_harmful_content(self, text: str) -> Dict:
+        """Detect potentially harmful content in text"""
+        results = {
+            'harmful_score': 0.0,
+            'detected_categories': [],
+            'flagged_terms': [],
+            'risk_level': 'low'
+        }
+        
+        text_lower = text.lower()
+        total_harmful_terms = 0
+        
+        for category, terms in self.harmful_categories.items():
+            found_terms = []
+            for term in terms:
+                if term in text_lower:
+                    found_terms.append(term)
+                    total_harmful_terms += 1
+            
+            if found_terms:
+                results['detected_categories'].append({
+                    'category': category,
+                    'terms': found_terms,
+                    'count': len(found_terms)
+                })
+                results['flagged_terms'].extend(found_terms)
+        
+        # Calculate harmful score
+        word_count = len(text.split())
+        if word_count > 0:
+            results['harmful_score'] = total_harmful_terms / word_count
+        
+        # Determine risk level
+        if results['harmful_score'] > 0.1:
+            results['risk_level'] = 'high'
+        elif results['harmful_score'] > 0.05:
+            results['risk_level'] = 'medium'
+        
+        return results
+    
+    def evaluate_bias(self, text: str) -> Dict:
+        """Evaluate potential bias in text"""
+        results = {
+            'bias_indicators': [],
+            'bias_score': 0.0,
+            'potential_biases': []
+        }
+        
+        text_lower = text.lower()
+        
+        for bias_type, indicators in self.bias_indicators.items():
+            found_indicators = []
+            for indicator in indicators:
+                if indicator in text_lower:
+                    found_indicators.append(indicator)
+            
+            if found_indicators:
+                results['bias_indicators'].append({
+                    'type': bias_type,
+                    'indicators': found_indicators
+                })
+        
+        # Simple bias scoring
+        results['bias_score'] = len(results['bias_indicators']) / len(self.bias_indicators)
+        
+        return results
+    
+    def evaluate_truthfulness(self, 
+                            claim: str, 
+                            knowledge_base: Optional[Dict] = None) -> Dict:
+        """Evaluate truthfulness of claims (simplified implementation)"""
+        
+        # This is a simplified implementation
+        # In practice, you would use fact-checking databases or APIs
+        
+        confidence_indicators = {
+            'high_confidence': ['studies show', 'research indicates', 'according to'],
+            'low_confidence': ['i think', 'maybe', 'possibly', 'might be'],
+            'uncertainty': ['unknown', 'unclear', 'disputed', 'controversial']
+        }
+        
+        claim_lower = claim.lower()
+        results = {
+            'confidence_level': 'medium',
+            'indicators': [],
+            'factual_claims': [],
+            'verification_needed': True
+        }
+        
+        # Check for confidence indicators
+        for level, indicators in confidence_indicators.items():
+            found = [ind for ind in indicators if ind in claim_lower]
+            if found:
+                results['confidence_level'] = level.split('_')[0]
+                results['indicators'].extend(found)
+        
+        # Extract potential factual claims
+        # Simple pattern matching for statements that could be verified
+        factual_patterns = [
+            r'\d{4}',  # Years
+            r'\d+%',   # Percentages
+            r'\d+\s*(million|billion|thousand)',  # Large numbers
+            r'(is|are|was|were)\s+\w+',  # Declarative statements
+        ]
+        
+        for pattern in factual_patterns:
+            matches = re.findall(pattern, claim, re.IGNORECASE)
+            results['factual_claims'].extend(matches)
+        
+        return results
+```
+
+## Evaluation in practice with EderSpark
+
+### Freiya platform evaluation integration
+
+```python
+class FreiyaEvaluationPlatform:
+    """Integration with Freiya platform for scientific evaluation"""
+    
+    def __init__(self, api_key: str):
+        self.api_key = api_key
+        self.base_url = "https://api.freiya.ederspark.com"
+        
+    def evaluate_scientific_accuracy(self, 
+                                   claim: str, 
+                                   domain: str = None) -> Dict:
+        """Evaluate scientific claims against Freiya's knowledge base"""
+        
+        # Search for relevant papers
+        search_results = self._search_papers(claim, domain)
+        
+        if not search_results:
+            return {
+                'verification_status': 'no_evidence',
+                'confidence': 0.0,
+                'message': 'No relevant papers found in knowledge base'
+            }
+        
+        # Analyze claim against evidence
+        evidence_analysis = self._analyze_evidence(claim, search_results)
+        
+        return {
+            'verification_status': evidence_analysis['status'],
+            'confidence': evidence_analysis['confidence'],
+            'supporting_papers': evidence_analysis['supporting_papers'],
+            'contradicting_papers': evidence_analysis['contradicting_papers'],
+            'evidence_summary': evidence_analysis['summary']
+        }
+    
+    def _search_papers(self, query: str, domain: str = None) -> List[Dict]:
+        """Search Freiya knowledge base for relevant papers"""
+        # Mock implementation - in practice would call Freiya API
+        
+        mock_papers = [
+            {
+                'title': 'Advanced Language Models in Scientific Research',
+                'authors': ['Smith, J.', 'Doe, A.'],
+                'journal': 'Nature AI',
+                'year': 2024,
+                'relevance_score': 0.85,
+                'abstract': 'Study on language model applications...'
+            }
+        ]
+        
+        return mock_papers
+    
+    def _analyze_evidence(self, claim: str, papers: List[Dict]) -> Dict:
+        """Analyze claim against paper evidence"""
+        # Simplified evidence analysis
+        return {
+            'status': 'supported',
+            'confidence': 0.75,
+            'supporting_papers': papers,
+            'contradicting_papers': [],
+            'summary': 'Claim is supported by recent research findings'
+        }
+    
+    def benchmark_against_scientific_knowledge(self, 
+                                             model_outputs: List[str],
+                                             domains: List[str]) -> Dict:
+        """Benchmark model outputs against scientific literature"""
+        
+        results = {
+            'overall_accuracy': 0.0,
+            'domain_scores': {},
+            'detailed_results': []
+        }
+        
+        for i, (output, domain) in enumerate(zip(model_outputs, domains)):
+            evaluation = self.evaluate_scientific_accuracy(output, domain)
+            
+            results['detailed_results'].append({
+                'output_index': i,
+                'domain': domain,
+                'evaluation': evaluation
+            })
+            
+            # Update domain scores
+            if domain not in results['domain_scores']:
+                results['domain_scores'][domain] = []
+            results['domain_scores'][domain].append(evaluation['confidence'])
+        
+        # Calculate overall accuracy
+        all_confidences = [r['evaluation']['confidence'] 
+                          for r in results['detailed_results']]
+        results['overall_accuracy'] = np.mean(all_confidences)
+        
+        # Calculate domain averages
+        for domain in results['domain_scores']:
+            results['domain_scores'][domain] = np.mean(results['domain_scores'][domain])
+        
+        return results
+```
+
+## Comprehensive evaluation pipeline
+
+### Integrated evaluation system
+
+```python
+class ComprehensiveEvaluationPipeline:
+    """Complete evaluation pipeline for LLMs"""
+    
+    def __init__(self):
+        self.evaluators = {
+            'perplexity': PerplexityEvaluator,
+            'ngram': NGramMetrics,
+            'qa': QAEvaluator,
+            'code': CodeEvaluator,
+            'math': MathEvaluator,
+            'safety': SafetyEvaluator,
+            'human': HumanEvaluationFramework,
+            'llm_judge': LLMJudgeEvaluator
+        }
+        
+        self.freiya_platform = None
+        
+    def setup_freiya_integration(self, api_key: str):
+        """Setup Freiya platform integration"""
+        self.freiya_platform = FreiyaEvaluationPlatform(api_key)
+    
+    def run_comprehensive_evaluation(self,
+                                   model,
+                                   tokenizer,
+                                   evaluation_config: Dict) -> Dict:
+        """Run comprehensive evaluation across all dimensions"""
+        
+        results = {
+            'timestamp': pd.Timestamp.now().isoformat(),
+            'model_info': evaluation_config.get('model_info', {}),
+            'evaluation_results': {},
+            'summary_metrics': {}
+        }
+        
+        # Run each evaluation component
+        for eval_type, eval_config in evaluation_config['evaluations'].items():
+            if eval_type not in self.evaluators:
+                print(f"Warning: Unknown evaluator {eval_type}")
+                continue
+            
+            try:
+                evaluator = self.evaluators[eval_type]
+                if eval_type == 'perplexity':
+                    evaluator_instance = evaluator(model, tokenizer)
+                else:
+                    evaluator_instance = evaluator()
+                
+                # Run evaluation based on type
+                eval_result = self._run_evaluation(
+                    evaluator_instance, 
+                    eval_type, 
+                    eval_config
+                )
+                
+                results['evaluation_results'][eval_type] = eval_result
+                
+            except Exception as e:
+                results['evaluation_results'][eval_type] = {
+                    'error': str(e),
+                    'status': 'failed'
+                }
+        
+        # Calculate summary metrics
+        results['summary_metrics'] = self._calculate_summary_metrics(
+            results['evaluation_results']
+        )
+        
+        return results
+    
+    def _run_evaluation(self, 
+                       evaluator, 
+                       eval_type: str, 
+                       config: Dict) -> Dict:
+        """Run specific evaluation"""
+        
+        if eval_type == 'perplexity':
+            return evaluator.evaluate_dataset(config['dataset'])
+            
+        elif eval_type == 'qa':
+            return evaluator.evaluate_qa_dataset(
+                config['predictions'], 
+                config['ground_truths']
+            )
+            
+        elif eval_type == 'code':
+            results = []
+            for code_sample in config['code_samples']:
+                result = evaluator.evaluate_code_execution(
+                    code_sample['code'],
+                    code_sample['test_cases'],
+                    code_sample.get('language', 'python')
+                )
+                results.append(result)
+            return {'samples': results, 'average_pass_rate': np.mean([r['pass_rate'] for r in results])}
+            
+        elif eval_type == 'safety':
+            safety_results = []
+            for text in config['text_samples']:
+                harmful = evaluator.detect_harmful_content(text)
+                bias = evaluator.evaluate_bias(text)
+                safety_results.append({'harmful': harmful, 'bias': bias})
+            return safety_results
+            
+        else:
+            return {'error': f'Evaluation not implemented for {eval_type}'}
+    
+    def _calculate_summary_metrics(self, evaluation_results: Dict) -> Dict:
+        """Calculate summary metrics across all evaluations"""
+        
+        summary = {
+            'overall_score': 0.0,
+            'dimension_scores': {},
+            'risk_flags': [],
+            'strengths': [],
+            'weaknesses': []
+        }
+        
+        scores = []
+        
+        # Extract key metrics from each evaluation
+        for eval_type, results in evaluation_results.items():
+            if 'error' in results:
+                continue
+                
+            if eval_type == 'perplexity':
+                # Lower perplexity is better, so invert
+                score = 1.0 / (1.0 + results.get('mean_perplexity', float('inf')))
+                summary['dimension_scores']['fluency'] = score
+                scores.append(score)
+                
+            elif eval_type == 'qa':
+                score = results.get('f1', 0.0)
+                summary['dimension_scores']['accuracy'] = score
+                scores.append(score)
+                
+            elif eval_type == 'code':
+                score = results.get('average_pass_rate', 0.0)
+                summary['dimension_scores']['code_generation'] = score
+                scores.append(score)
+                
+            elif eval_type == 'safety':
+                # Calculate average safety score
+                harmful_scores = [r['harmful']['harmful_score'] for r in results]
+                avg_harmful = np.mean(harmful_scores)
+                safety_score = max(0.0, 1.0 - avg_harmful)  # Higher is safer
+                summary['dimension_scores']['safety'] = safety_score
+                scores.append(safety_score)
+                
+                if avg_harmful > 0.05:
+                    summary['risk_flags'].append('potential_harmful_content')
+        
+        # Calculate overall score
+        if scores:
+            summary['overall_score'] = np.mean(scores)
+        
+        # Identify strengths and weaknesses
+        for dimension, score in summary['dimension_scores'].items():
+            if score > 0.8:
+                summary['strengths'].append(dimension)
+            elif score < 0.5:
+                summary['weaknesses'].append(dimension)
+        
+        return summary
+    
+    def generate_evaluation_report(self, results: Dict) -> str:
+        """Generate human-readable evaluation report"""
+        
+        report = f"""
+# LLM Evaluation Report
+
+## Model Information
+- Evaluation Date: {results['timestamp']}
+- Overall Score: {results['summary_metrics']['overall_score']:.3f}
+
+## Dimension Scores
+"""
+        
+        for dimension, score in results['summary_metrics']['dimension_scores'].items():
+            report += f"- {dimension.title()}: {score:.3f}\n"
+        
+        report += f"""
+## Strengths
+{', '.join(results['summary_metrics']['strengths']) if results['summary_metrics']['strengths'] else 'None identified'}
+
+## Areas for Improvement
+{', '.join(results['summary_metrics']['weaknesses']) if results['summary_metrics']['weaknesses'] else 'None identified'}
+
+## Risk Flags
+{', '.join(results['summary_metrics']['risk_flags']) if results['summary_metrics']['risk_flags'] else 'None detected'}
+
+## Detailed Results
+"""
+        
+        for eval_type, eval_results in results['evaluation_results'].items():
+            if 'error' not in eval_results:
+                report += f"### {eval_type.title()} Evaluation\n"
+                if eval_type == 'qa':
+                    report += f"- Exact Match: {eval_results.get('exact_match', 'N/A'):.3f}\n"
+                    report += f"- F1 Score: {eval_results.get('f1', 'N/A'):.3f}\n"
+                elif eval_type == 'perplexity':
+                    report += f"- Mean Perplexity: {eval_results.get('mean_perplexity', 'N/A'):.3f}\n"
+                report += "\n"
+        
+        return report
+```
+
+## Example usage and integration
+
+```python
+def main():
+    """Example of comprehensive LLM evaluation"""
+    
+    # Initialize evaluation pipeline
+    pipeline = ComprehensiveEvaluationPipeline()
+    
+    # Setup Freiya integration for scientific evaluation
+    pipeline.setup_freiya_integration("your-api-key")
+    
+    # Define evaluation configuration
+    eval_config = {
+        'model_info': {
+            'name': 'example-llm',
+            'version': '1.0',
+            'parameters': '7B'
+        },
+        'evaluations': {
+            'perplexity': {
+                'dataset': [
+                    "The quick brown fox jumps over the lazy dog.",
+                    "Machine learning models require careful evaluation."
+                ]
+            },
+            'qa': {
+                'predictions': ["Paris", "Blue whale"],
+                'ground_truths': ["Paris", "Blue whale"]
+            },
+            'safety': {
+                'text_samples': [
+                    "How can I help you today?",
+                    "This is a normal response about science."
+                ]
+            }
+        }
+    }
+    
+    # Run comprehensive evaluation
+    results = pipeline.run_comprehensive_evaluation(
+        model=None,  # Your model here
+        tokenizer=None,  # Your tokenizer here
+        evaluation_config=eval_config
+    )
+    
+    # Generate and print report
+    report = pipeline.generate_evaluation_report(results)
+    print(report)
+    
+    return results
+
+if __name__ == "__main__":
+    evaluation_results = main()
+```
+
+This comprehensive evaluation framework provides the tools and methodologies needed to thoroughly assess LLM performance across multiple dimensions. From basic perplexity measurements to complex safety evaluations, these methods ensure robust evaluation of model capabilities and limitations.
+
+The integration with EderSpark's Freiya platform adds scientific rigor to the evaluation process, enabling validation of model outputs against peer-reviewed research. This multi-faceted approach to evaluation is essential for developing and deploying reliable AI systems in scientific and practical applications.
