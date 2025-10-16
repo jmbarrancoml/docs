@@ -1,171 +1,68 @@
 {
   "$schema": "https://mintlify.com/docs.json",
   "theme": "mint",
-  "name": "EderSpark AI Documentation",
+  "name": "Mint Starter Kit",
   "colors": {
-    "primary": "#2563eb",
-    "light": "#3b82f6",
-    "dark": "#1d4ed8"
+    "primary": "#16A34A",
+    "light": "#07C983",
+    "dark": "#15803D"
   },
   "favicon": "/favicon.svg",
   "navigation": {
     "tabs": [
       {
-        "tab": "Fundamentals",
+        "tab": "Guides",
         "groups": [
           {
-            "group": "Getting Started",
+            "group": "Getting started",
             "pages": [
               "index",
-              "fundamentals/overview",
-              "fundamentals/history"
+              "quickstart",
+              "development"
             ]
           },
           {
-            "group": "Core Concepts",
+            "group": "Customization",
             "pages": [
-              "fundamentals/neural-networks",
-              "fundamentals/deep-learning",
-              "fundamentals/mathematical-foundations"
+              "essentials/settings",
+              "essentials/navigation"
             ]
           },
           {
-            "group": "Model Architectures",
+            "group": "Writing content",
             "pages": [
-              "fundamentals/transformers",
-              "fundamentals/attention-mechanisms",
-              "fundamentals/embeddings"
+              "essentials/markdown",
+              "essentials/code",
+              "essentials/images",
+              "essentials/reusable-snippets"
+            ]
+          },
+          {
+            "group": "AI tools",
+            "pages": [
+              "ai-tools/cursor",
+              "ai-tools/claude-code",
+              "ai-tools/windsurf"
             ]
           }
         ]
       },
       {
-        "tab": "Large Language Models",
+        "tab": "API reference",
         "groups": [
           {
-            "group": "Architecture & Design",
+            "group": "API documentation",
             "pages": [
-              "llms/introduction",
-              "llms/transformer-architecture",
-              "llms/scaling-laws",
-              "llms/model-families"
+              "api-reference/introduction"
             ]
           },
           {
-            "group": "Training & Fine-tuning",
+            "group": "Endpoint examples",
             "pages": [
-              "llms/pretraining",
-              "llms/supervised-fine-tuning",
-              "llms/reinforcement-learning",
-              "llms/constitutional-ai"
-            ]
-          },
-          {
-            "group": "Evaluation & Benchmarking",
-            "pages": [
-              "llms/evaluation-methods",
-              "llms/benchmarks",
-              "llms/capability-assessment"
-            ]
-          }
-        ]
-      },
-      {
-        "tab": "AI Agents",
-        "groups": [
-          {
-            "group": "Agent Fundamentals",
-            "pages": [
-              "agents/introduction",
-              "agents/architectures",
-              "agents/reasoning-planning"
-            ]
-          },
-          {
-            "group": "Multi-Agent Systems",
-            "pages": [
-              "agents/multi-agent-frameworks",
-              "agents/coordination",
-              "agents/communication"
-            ]
-          },
-          {
-            "group": "Tools & Integration",
-            "pages": [
-              "agents/tool-usage",
-              "agents/function-calling",
-              "agents/real-world-integration"
-            ]
-          }
-        ]
-      },
-      {
-        "tab": "Training & Infrastructure",
-        "groups": [
-          {
-            "group": "Training Infrastructure",
-            "pages": [
-              "training/distributed-training",
-              "training/hardware-optimization",
-              "training/data-processing"
-            ]
-          },
-          {
-            "group": "Optimization Techniques",
-            "pages": [
-              "training/optimization-algorithms",
-              "training/regularization",
-              "training/efficiency"
-            ]
-          }
-        ]
-      },
-      {
-        "tab": "Alignment & Safety",
-        "groups": [
-          {
-            "group": "AI Safety",
-            "pages": [
-              "alignment/introduction",
-              "alignment/value-alignment",
-              "alignment/robustness"
-            ]
-          },
-          {
-            "group": "Alignment Techniques",
-            "pages": [
-              "alignment/constitutional-ai",
-              "alignment/red-teaming",
-              "alignment/safety-evaluation"
-            ]
-          }
-        ]
-      },
-      {
-        "tab": "Interactions & Applications",
-        "groups": [
-          {
-            "group": "Human-AI Interaction",
-            "pages": [
-              "interactions/prompt-engineering",
-              "interactions/conversation-design",
-              "interactions/user-experience"
-            ]
-          },
-          {
-            "group": "Scientific Applications",
-            "pages": [
-              "applications/scientific-research",
-              "applications/knowledge-discovery",
-              "applications/literature-analysis"
-            ]
-          },
-          {
-            "group": "Development Tools",
-            "pages": [
-              "tools/claude-code",
-              "tools/cursor",
-              "tools/development-workflow"
+              "api-reference/endpoint/get",
+              "api-reference/endpoint/create",
+              "api-reference/endpoint/delete",
+              "api-reference/endpoint/webhook"
             ]
           }
         ]
@@ -174,19 +71,14 @@
     "global": {
       "anchors": [
         {
-          "anchor": "EderSpark",
-          "href": "https://ederspark.com",
-          "icon": "sparkles"
+          "anchor": "Documentation",
+          "href": "https://mintlify.com/docs",
+          "icon": "book-open-cover"
         },
         {
-          "anchor": "Freiya Platform",
-          "href": "https://freiya.ederspark.com",
-          "icon": "magnifying-glass"
-        },
-        {
-          "anchor": "Research",
-          "href": "https://ederspark.com/research",
-          "icon": "flask"
+          "anchor": "Blog",
+          "href": "https://mintlify.com/blog",
+          "icon": "newspaper"
         }
       ]
     }
@@ -198,14 +90,14 @@
   "navbar": {
     "links": [
       {
-        "label": "Contact",
-        "href": "mailto:contact@ederspark.com"
+        "label": "Support",
+        "href": "mailto:hi@mintlify.com"
       }
     ],
     "primary": {
       "type": "button",
-      "label": "Freiya Platform",
-      "href": "https://freiya.ederspark.com"
+      "label": "Dashboard",
+      "href": "https://dashboard.mintlify.com"
     }
   },
   "contextual": {
@@ -222,9 +114,9 @@
   },
   "footer": {
     "socials": {
-      "x": "https://x.com/ederspark",
-      "github": "https://github.com/ederspark",
-      "linkedin": "https://linkedin.com/company/ederspark"
+      "x": "https://x.com/mintlify",
+      "github": "https://github.com/mintlify",
+      "linkedin": "https://linkedin.com/company/mintlify"
     }
   }
 }
