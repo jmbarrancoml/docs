@@ -8,10 +8,7 @@
   "colors": {
     "primary": "#4F46E5",
     "light": "#818CF8",
-    "dark": "#4338CA",
-    "background": {
-      "dark": "#0D1117"
-    }
+    "dark": "#4338CA"
   },
   "topbarLinks": [
     {
@@ -23,47 +20,49 @@
     "name": "Get Started",
     "url": "https://freiya.app/auth/signup"
   },
-  "navigation": [
-    {
-      "group": "Getting started",
-      "pages": [
-        "introduction",
-        "quickstart",
-        "getting-started/signup"
-      ]
-    },
-    {
-      "group": "Features",
-      "pages": [
-        "features/ai-chat",
-        "features/paper-management",
-        "features/collections",
-        "features/pdf-viewer",
-        "features/institution-search"
-      ]
-    },
-    {
-      "group": "Account",
-      "pages": [
-        "account/subscription-tiers",
-        "account/settings"
-      ]
-    },
-    {
-      "group": "Guides",
-      "pages": [
-        "guides/research-workflow",
-        "guides/tips-best-practices"
-      ]
-    },
-    {
-      "group": "Reference",
-      "pages": [
-        "reference/keyboard-shortcuts",
-        "reference/admin-tools"
-      ]
-    }
-  ],
+  "navigation": {
+    "groups": [
+      {
+        "group": "Getting started",
+        "pages": [
+          "introduction",
+          "quickstart",
+          "getting-started/signup"
+        ]
+      },
+      {
+        "group": "Features",
+        "pages": [
+          "features/ai-chat",
+          "features/paper-management",
+          "features/collections",
+          "features/pdf-viewer",
+          "features/institution-search"
+        ]
+      },
+      {
+        "group": "Account",
+        "pages": [
+          "account/subscription-tiers",
+          "account/settings"
+        ]
+      },
+      {
+        "group": "Guides",
+        "pages": [
+          "guides/research-workflow",
+          "guides/tips-best-practices"
+        ]
+      },
+      {
+        "group": "Reference",
+        "pages": [
+          "reference/keyboard-shortcuts",
+          "reference/admin-tools"
+        ]
+      }
+    ]
+  },
   "footerSocials": {
     "twitter": "https://twitter.com/freiya",
     "github": "https://github.com/freiya",

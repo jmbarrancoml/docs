@@ -9,7 +9,8 @@
       "WebFetch(domain:raw.githubusercontent.com)",
       "Bash(git rm:*)",
       "Bash(curl:*)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "WebFetch(domain:www.mintlify.com)"
     ],
     "deny": [],
     "ask": []
