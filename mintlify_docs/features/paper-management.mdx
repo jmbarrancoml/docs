@@ -1,0 +1,626 @@
+---
+title: "Paper management"
+description: "Add, organize, and manage your research paper library with powerful search, tags, collections, and citation generation"
+icon: "file-lines"
+---
+
+Your paper library is the heart of Freiya. Add papers from multiple sources, organize them with tags and collections, take notes, and generate citations in any format—all in one centralized workspace.
+
+++IMAGE: **Paper library view showing a grid of paper cards, each displaying title, authors, year, abstract preview, tags, and action buttons. Include the search bar and filter options at the top**++
+
+## Overview
+
+Freiya's paper management system helps you build and maintain your personal research library. Whether you have 5 papers or 500, you'll have powerful tools to keep everything organized and accessible.
+
+**Key features:**
+- Multiple import methods (DOI, manual, PDF)
+- Automatic metadata fetching
+- Full-text search across your library
+- Flexible tagging system
+- Notes and annotations
+- Citation generation in multiple formats
+- Integration with PDF viewer and AI chat
+
+## Adding papers
+
+Freiya supports three methods for adding papers to your library. Choose the one that works best for your workflow.
+
+### Method 1: Search by DOI
+
+The fastest and most accurate way to add papers with complete metadata.
+
+<Steps>
+  <Step title="Click Add Paper">
+    Find the **Add Paper** button in the top-right corner of your library
+  </Step>
+
+  <Step title="Select DOI tab">
+    The DOI search tab is usually selected by default
+  </Step>
+
+  <Step title="Enter the DOI">
+    Paste the DOI (e.g., `10.1038/s41586-021-03819-2`)
+  </Step>
+
+  <Step title="Fetch metadata">
+    Click **Search** and Freiya automatically retrieves all paper information
+  </Step>
+
+  <Step title="Review and save">
+    Verify the information and click **Save to Library**
+  </Step>
+</Steps>
+
+++IMAGE: **Add Paper modal with the DOI tab selected, showing the DOI input field with an example DOI entered, and a "Search" button below**++
+
+<Tip>
+Find DOIs on journal websites, in paper PDFs (usually in the header or footer), or on Google Scholar.
+</Tip>
+
+**What gets fetched:**
+- Title and abstract
+- Complete author list with affiliations
+- Publication venue and year
+- Citation count
+- DOI and URL links
+- PDF URL (when available via open access)
+- Institution information
+
+**Data sources:**
+- Semantic Scholar API (primary)
+- CrossRef API (backup)
+- OpenAlex (institutions)
+
+### Method 2: Manual entry
+
+Perfect for papers without DOIs, preprints, or when you need to customize metadata.
+
+<Steps>
+  <Step title="Open Add Paper">
+    Click **Add Paper** button
+  </Step>
+
+  <Step title="Select Manual Entry tab">
+    Switch to the **Manual Entry** tab
+  </Step>
+
+  <Step title="Fill in details">
+    Enter the paper information:
+    - Title (required)
+    - Authors
+    - Publication name
+    - Year
+    - Abstract
+    - DOI (optional)
+    - URL (optional)
+  </Step>
+
+  <Step title="Add tags">
+    Optionally add tags for organization
+  </Step>
+
+  <Step title="Save">
+    Click **Save to Library**
+  </Step>
+</Steps>
+
+++IMAGE: **Add Paper modal showing the Manual Entry tab with form fields for title, authors, publication, year, abstract, and tags**++
+
+<Note>
+Manual entry is great for working papers, dissertations, technical reports, or historical papers that don't have DOIs.
+</Note>
+
+### Method 3: PDF upload
+
+Upload a PDF and let Freiya extract metadata automatically.
+
+<Steps>
+  <Step title="Open Add Paper">
+    Click **Add Paper** button
+  </Step>
+
+  <Step title="Select PDF Upload tab">
+    Switch to the **Upload PDF** tab
+  </Step>
+
+  <Step title="Choose file">
+    Click **Browse** and select a PDF from your device
+  </Step>
+
+  <Step title="Wait for processing">
+    Freiya extracts text and metadata from the PDF
+  </Step>
+
+  <Step title="Review and edit">
+    Verify the extracted information and make any corrections
+  </Step>
+
+  <Step title="Save">
+    Click **Save to Library**
+  </Step>
+</Steps>
+
+**File size limits:**
+- Free tier: 10 MB
+- Pro tier: 50 MB
+- Nova tier: 100 MB
+- Unlimited tier: 500 MB
+
+<Warning>
+PDF text extraction works best with text-based PDFs. Scanned PDFs may have incomplete metadata extraction.
+</Warning>
+
+## Paper library interface
+
+Your library provides multiple ways to view and interact with your papers.
+
+### View modes
+
+<Tabs>
+  <Tab title="Grid view">
+    **Best for:** Browsing and visual scanning
+
+    Papers displayed as cards in a grid layout. Each card shows:
+    - Paper title
+    - Authors (first 3)
+    - Year and publication
+    - Abstract preview (first 150 characters)
+    - Tags
+    - Quick action buttons
+
+    ++IMAGE: **Grid view of paper library showing 6-8 paper cards in a 2-3 column layout**++
+  </Tab>
+
+  <Tab title="List view">
+    **Best for:** Detailed information and sorting
+
+    Papers displayed as rows in a table. Columns include:
+    - Title
+    - Authors
+    - Year
+    - Publication
+    - Citations
+    - Tags
+    - Actions
+
+    ++IMAGE: **List view of paper library showing papers in a table format with sortable columns**++
+  </Tab>
+
+  <Tab title="Compact view">
+    **Best for:** Large libraries and quick scanning
+
+    Minimal display showing just essentials:
+    - Title
+    - First author + year
+    - Tags
+
+    ++IMAGE: **Compact view showing papers in a dense list format with minimal information**++
+  </Tab>
+</Tabs>
+
+### Search and filters
+
+Find papers quickly with powerful search and filtering options.
+
+**Search capabilities:**
+- **Title search** - Find by paper title
+- **Author search** - Search by author name
+- **Full-text** - Search abstracts and notes
+- **Tag search** - Find by tags
+- **Publication search** - Filter by venue
+
+++IMAGE: **Search bar at the top of the library with filter dropdown menu open, showing options for filtering by year, tags, publication, and citation count**++
+
+**Filter options:**
+- **By year** - Range slider or specific years
+- **By tags** - Multi-select tag filter
+- **By collection** - Show papers in specific collection
+- **By citation count** - Sort by influence
+- **By date added** - Find recent additions
+
+**Sort options:**
+- Relevance (when searching)
+- Date added (newest/oldest)
+- Title (A-Z)
+- Year (newest/oldest)
+- Citation count (most/least)
+- Author name (A-Z)
+
+<Tip>
+Use `Ctrl/Cmd + F` to quickly jump to the search box from anywhere in your library.
+</Tip>
+
+## Paper detail page
+
+Click any paper to see its complete information and available actions.
+
+### Paper information
+
+The detail page displays comprehensive metadata:
+
+**Header section:**
+- Full title
+- Complete author list with affiliations
+- Publication venue and year
+- Citation count
+- Open access indicators
+
+++IMAGE: **Paper detail page header showing the full title, author list with institutions as links, publication info, and citation count badge**++
+
+**Content tabs:**
+
+<Tabs>
+  <Tab title="Overview">
+    - Full abstract
+    - Key metadata (DOI, URLs)
+    - Publication details
+    - Date added to library
+  </Tab>
+
+  <Tab title="Notes">
+    - Your personal notes about the paper
+    - Rich text editor with markdown support
+    - Auto-save functionality
+    - Timestamp tracking
+  </Tab>
+
+  <Tab title="Highlights">
+    - All highlights from PDF annotations
+    - Filter by color or category
+    - Jump to highlighted section
+    - Export highlights
+  </Tab>
+
+  <Tab title="Collections">
+    - Collections containing this paper
+    - Add to more collections
+    - Remove from collections
+  </Tab>
+</Tabs>
+
+### Paper actions
+
+**Available actions:**
+- **View PDF** - Open in Focus mode for reading and annotation
+- **Edit** - Modify metadata
+- **Add to Collection** - Organize into collections
+- **Generate Citation** - Create citations in any format
+- **Chat about Paper** - Start AI chat with paper context
+- **Share** - Get shareable link
+- **Delete** - Remove from library
+
+++IMAGE: **Paper detail page action buttons toolbar showing icons for View PDF, Edit, Add to Collection, Cite, Chat, Share, and Delete**++
+
+## Tags and organization
+
+Tags are flexible labels you can apply to papers for organization and quick filtering.
+
+### Creating and applying tags
+
+<Steps>
+  <Step title="Open a paper">
+    Click on any paper to view its details
+  </Step>
+
+  <Step title="Click Add Tag">
+    Find the tags section and click **Add Tag** or **+**
+  </Step>
+
+  <Step title="Type tag name">
+    Enter a tag name (e.g., "machine-learning" or "to-read")
+  </Step>
+
+  <Step title="Press Enter">
+    Tag is created and applied to the paper
+  </Step>
+</Steps>
+
+**Tag best practices:**
+- Use lowercase with hyphens: `neural-networks`
+- Be consistent with naming
+- Create a tagging system early
+- Use both topic tags and status tags
+
+**Example tagging system:**
+```
+Topic tags:
+- methodology
+- theory
+- applications
+- review-paper
+
+Status tags:
+- to-read
+- reading
+- read
+- key-paper
+- to-cite
+
+Project tags:
+- thesis-ch1
+- thesis-ch2
+- grant-proposal
+- conference-paper
+```
+
+++IMAGE: **Paper card showing multiple colorful tag badges like "machine-learning", "to-read", and "key-paper"**++
+
+### Managing tags
+
+**Bulk tagging:**
+1. Select multiple papers (checkbox or `Ctrl/Cmd + Click`)
+2. Click **Add Tags** in the bulk actions toolbar
+3. Choose or create tags
+4. Apply to all selected papers
+
+**Tag management:**
+- Rename tags (updates all papers)
+- Merge tags (combine similar tags)
+- Delete tags (removes from all papers)
+- Change tag colors (visual organization)
+
+## Notes and annotations
+
+Keep track of insights, questions, and connections with personal notes.
+
+### Paper notes
+
+Each paper has a dedicated notes section with a rich text editor.
+
+**Features:**
+- Markdown formatting support
+- Bold, italics, headings, lists
+- Code blocks and inline code
+- Links to other papers or external resources
+- Auto-save (saves as you type)
+- Timestamp tracking
+
+++IMAGE: **Paper notes editor showing rich text formatting toolbar and sample notes with headings, lists, and formatted text**++
+
+**Use cases for notes:**
+- Summarize key findings
+- Critique methodology
+- List questions for further research
+- Connect to other papers
+- Note relevance to your work
+- Draft citation text
+
+<Tip>
+Use notes to create a personal abstract summarizing why the paper matters to YOU and your research.
+</Tip>
+
+## Citations and export
+
+Generate properly formatted citations for any paper in your library.
+
+### Generate citations
+
+<Steps>
+  <Step title="Open paper detail">
+    Navigate to the paper you want to cite
+  </Step>
+
+  <Step title="Click Cite button">
+    Click the **Cite** or **Generate Citation** button
+  </Step>
+
+  <Step title="Select format">
+    Choose from available citation formats
+  </Step>
+
+  <Step title="Copy or download">
+    Copy to clipboard or download as a file
+  </Step>
+</Steps>
+
+### Supported citation formats
+
+<Tabs>
+  <Tab title="Common styles">
+    - **APA** (American Psychological Association)
+    - **MLA** (Modern Language Association)
+    - **Chicago** (Author-Date and Notes)
+    - **Harvard** referencing style
+    - **IEEE** (Institute of Electrical and Electronics Engineers)
+  </Tab>
+
+  <Tab title="Reference managers">
+    - **BibTeX** (`.bib` file for LaTeX)
+    - **RIS** (`.ris` file for EndNote, Mendeley, Zotero)
+    - **EndNote XML**
+    - **RefWorks**
+  </Tab>
+
+  <Tab title="Custom">
+    - **Plain text** with custom formatting
+    - **JSON** export with all metadata
+    - **CSV** for spreadsheets
+  </Tab>
+</Tabs>
+
+++IMAGE: **Citation modal showing a formatted APA citation with tabs for different citation styles at the top and "Copy" and "Download" buttons at the bottom**++
+
+### Bulk export
+
+Export citations for multiple papers at once:
+
+<Steps>
+  <Step title="Select papers">
+    Use checkboxes to select papers in your library
+  </Step>
+
+  <Step title="Click Export">
+    Find the **Export Citations** button in the bulk actions
+  </Step>
+
+  <Step title="Choose format">
+    Select BibTeX, RIS, or other format
+  </Step>
+
+  <Step title="Download file">
+    Save the file and import into your reference manager
+  </Step>
+</Steps>
+
+<Tip>
+For LaTeX users, export your entire library as BibTeX and include it in your project. Update the file whenever you add new papers.
+</Tip>
+
+## Paper limits by tier
+
+Your subscription tier determines how many papers you can store and add each month.
+
+| Tier | Total Papers | Papers/Month | Collections |
+|------|--------------|--------------|-------------|
+| Free | 5 | 5 | 2 |
+| Pro | 500 | 500 | 20 |
+| Nova | 500 | 500 | 20 |
+| Unlimited | ∞ | ∞ | ∞ |
+
+**Monthly limits:**
+- Reset on the 1st of each month
+- Prevent accidental bulk imports
+- Can be monitored in Settings
+
+<Warning>
+When you reach your paper limit, you'll need to delete papers or upgrade to add more.
+</Warning>
+
+[Compare subscription tiers →](/account/subscription-tiers)
+
+## Advanced features
+
+### Duplicate detection
+
+Freiya automatically detects potential duplicates when adding papers:
+- Matching titles
+- Same DOI
+- Similar author lists and years
+
+You'll be prompted to confirm if you want to add a potential duplicate.
+
+### Paper linking
+
+Link related papers together:
+- Cite papers that reference each other
+- Group papers by methodology
+- Track paper evolution (v1, v2, preprint → published)
+- Create reading order
+
+### Collaboration (coming soon)
+
+Future features for teams:
+- Shared libraries
+- Collaborative notes
+- Team collections
+- Permission management
+
+## Integration with other features
+
+### With PDF viewer
+
+- Click **View PDF** to open in Focus mode
+- Annotations sync automatically
+- Highlights appear in paper detail
+- Ask AI questions about the paper while reading
+
+[Learn about PDF viewer →](/features/pdf-viewer)
+
+### With AI chat
+
+- Click **Chat about Paper** to start context-aware conversation
+- AI has access to full paper metadata
+- Better responses with paper context
+- Link papers to existing chats
+
+[Learn about AI chat →](/features/ai-chat)
+
+### With collections
+
+- Add papers to multiple collections
+- Filter library by collection
+- Collection-based organization
+- Export collections
+
+[Learn about collections →](/features/collections)
+
+## Keyboard shortcuts
+
+Work faster with keyboard shortcuts:
+
+| Action | Shortcut |
+|--------|----------|
+| Add paper | `Ctrl/Cmd + P` |
+| Search library | `Ctrl/Cmd + F` |
+| Select all | `Ctrl/Cmd + A` |
+| Multi-select | `Ctrl/Cmd + Click` |
+| Range select | `Shift + Click` |
+| Open selected | `Enter` |
+| Delete selected | `Delete` |
+| Add to collection | `Ctrl/Cmd + M` |
+
+[See all shortcuts →](/reference/keyboard-shortcuts)
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="DOI search isn't finding my paper">
+    Try these steps:
+    1. Verify the DOI is correct (check for typos)
+    2. Try the full DOI URL (https://doi.org/...)
+    3. Use manual entry if DOI search fails
+    4. Check if the paper is recently published (indexing delay)
+  </Accordion>
+
+  <Accordion title="PDF upload failed">
+    Common issues:
+    - File too large for your tier
+    - File is corrupted or password-protected
+    - PDF is actually a scanned image (use manual entry)
+    - Network connection interrupted
+  </Accordion>
+
+  <Accordion title="I can't add more papers">
+    You've likely reached your limit:
+    - Check your tier limits in Settings
+    - Wait for monthly reset (1st of the month)
+    - Delete old papers you no longer need
+    - Upgrade to a higher tier
+  </Accordion>
+
+  <Accordion title="Where did my paper go?">
+    Check these locations:
+    - Search for the paper title
+    - Check all collections (might be filtered)
+    - Look in trash/deleted (coming soon)
+    - Verify you're logged into correct account
+  </Accordion>
+
+  <Accordion title="Citation format is incorrect">
+    Citation generation is automatic but may need adjustment:
+    - Verify the paper metadata is correct
+    - Edit the paper details if needed
+    - Manual citation editing coming soon
+    - Contact support if consistently wrong
+  </Accordion>
+</AccordionGroup>
+
+## Related features
+
+<CardGroup cols={2}>
+  <Card title="Collections" icon="folder" href="/features/collections">
+    Organize papers into topic-based collections
+  </Card>
+
+  <Card title="PDF viewer" icon="highlighter" href="/features/pdf-viewer">
+    Read and annotate papers in Focus mode
+  </Card>
+
+  <Card title="AI chat" icon="comments" href="/features/ai-chat">
+    Chat about specific papers with AI assistance
+  </Card>
+
+  <Card title="Research workflow" icon="diagram-project" href="/guides/research-workflow">
+    Learn best practices for organizing your research
+  </Card>
+</CardGroup>

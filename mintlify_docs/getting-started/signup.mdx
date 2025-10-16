@@ -1,0 +1,416 @@
+---
+title: "Sign up and authentication"
+description: "Create your Freiya account using email or Google OAuth, verify your email, and get started with your research platform"
+icon: "user-plus"
+---
+
+Creating a Freiya account is quick and secure. Choose between email registration or Google OAuth for instant access to your research workspace.
+
+## Sign up options
+
+Freiya offers two registration methods to suit your preference:
+
+<CardGroup cols={2}>
+  <Card title="Email registration" icon="envelope">
+    Sign up with your email address and create a password
+  </Card>
+
+  <Card title="Google OAuth" icon="google" iconType="brands">
+    Sign up instantly using your existing Google account
+  </Card>
+</CardGroup>
+
+## Email registration
+
+Create an account using your email address with our secure registration process.
+
+### Registration steps
+
+<Steps>
+  <Step title="Visit signup page">
+    Navigate to [freiya.app/auth/signup](https://freiya.app/auth/signup)
+  </Step>
+
+  <Step title="Enter your information">
+    Fill in the registration form:
+    - **Full name** - Your display name
+    - **Email address** - Must be valid for verification
+    - **Password** - Secure password meeting requirements
+  </Step>
+
+  <Step title="Submit registration">
+    Click **Sign Up** to create your account
+  </Step>
+
+  <Step title="Check your email">
+    Look for verification email from Freiya
+  </Step>
+
+  <Step title="Enter verification code">
+    Open the email and copy the 5-digit code
+  </Step>
+
+  <Step title="Verify account">
+    Enter the code on the verification page
+  </Step>
+
+  <Step title="Start using Freiya">
+    Your account is activated—begin exploring!
+  </Step>
+</Steps>
+
+++IMAGE: **Signup form showing input fields for name, email, and password with password requirements listed below and a prominent "Sign Up" button**++
+
+### Password requirements
+
+Your password must meet these security standards:
+- Minimum 8 characters
+- At least one uppercase letter (recommended)
+- At least one number (recommended)
+- At least one special character (recommended)
+
+<Tip>
+Use a strong, unique password. Consider using a password manager like 1Password, LastPass, or Bitwarden.
+</Tip>
+
+### Email verification
+
+After registering, you'll receive a verification email:
+
+**Email contents:**
+- 5-digit verification code
+- Link to verification page
+- Code expiration time (1 hour)
+
+++IMAGE: **Verification email showing the Freiya logo, welcome message, and large 5-digit code displayed prominently with spacing between digits**++
+
+**If you don't receive the email:**
+- Check spam/junk folder
+- Verify email address was entered correctly
+- Wait a few minutes (delivery can be delayed)
+- Request a new code on the verification page
+
+<Warning>
+Verification codes expire after 1 hour. Request a new code if yours expires.
+</Warning>
+
+### Completing verification
+
+<Steps>
+  <Step title="Open verification page">
+    Click the link in the email or navigate manually
+  </Step>
+
+  <Step title="Enter code">
+    Type the 5-digit code from your email
+  </Step>
+
+  <Step title="Submit">
+    Click **Verify Email**
+  </Step>
+
+  <Step title="Success">
+    Account verified! You'll be redirected to the app
+  </Step>
+</Steps>
+
+++IMAGE: **Verification page showing input field for 5-digit code, "Verify Email" button, and "Resend Code" link below**++
+
+## Google OAuth registration
+
+Sign up instantly using your Google account—no password needed, no email verification required.
+
+### OAuth steps
+
+<Steps>
+  <Step title="Visit signup page">
+    Go to [freiya.app/auth/signup](https://freiya.app/auth/signup)
+  </Step>
+
+  <Step title="Click Continue with Google">
+    Find and click the **Continue with Google** button
+  </Step>
+
+  <Step title="Select Google account">
+    Choose the Google account you want to use
+  </Step>
+
+  <Step title="Grant permissions">
+    Review and accept the permissions Freiya requests
+  </Step>
+
+  <Step title="Automatic redirect">
+    You're instantly logged in and redirected to the app
+  </Step>
+</Steps>
+
+++IMAGE: **Signup page with "Continue with Google" button prominently displayed, using Google's brand colors and logo**++
+
+### Benefits of Google OAuth
+
+- **Faster signup** - No forms to fill, instant account creation
+- **No password** - One less password to remember
+- **Auto-verification** - Email pre-verified by Google
+- **Secure** - Google's enterprise-grade security
+- **Easy login** - Quick sign-in on future visits
+
+<Note>
+Your Google account email becomes your Freiya account email. Your password stays with Google—Freiya never sees it.
+</Note>
+
+### Permissions requested
+
+When you sign up with Google, Freiya requests:
+
+| Permission | Why we need it |
+|-----------|----------------|
+| **Email address** | To create and identify your account |
+| **Basic profile info** | Your name for display in the app |
+| **Profile picture** | Optional, for your account avatar |
+
+<Info>
+Freiya never posts to your Google account or accesses other Google services without permission.
+</Info>
+
+## Signing in
+
+After creating your account, sign in to access Freiya.
+
+### Sign in with email
+
+<Steps>
+  <Step title="Visit signin page">
+    Go to [freiya.app/auth/signin](https://freiya.app/auth/signin)
+  </Step>
+
+  <Step title="Enter credentials">
+    Input your email and password
+  </Step>
+
+  <Step title="Click Sign In">
+    Submit the form
+  </Step>
+
+  <Step title="Access granted">
+    You're logged in and redirected to your workspace
+  </Step>
+</Steps>
+
+++IMAGE: **Sign in page showing email and password input fields, "Sign In" button, "Forgot Password?" link, and "Continue with Google" option below**++
+
+### Sign in with Google
+
+<Steps>
+  <Step title="Visit signin page">
+    Go to [freiya.app/auth/signin](https://freiya.app/auth/signin)
+  </Step>
+
+  <Step title="Click Continue with Google">
+    Use the Google OAuth button
+  </Step>
+
+  <Step title="Select account">
+    Choose your Google account
+  </Step>
+
+  <Step title="Instant access">
+    Automatically signed in
+  </Step>
+</Steps>
+
+### Remember me
+
+Check **Remember Me** to stay signed in:
+- Session persists for 30 days
+- Secure token stored locally
+- Auto-login on return visits
+- Can be disabled in Settings
+
+<Tip>
+Only use "Remember Me" on your personal devices, not shared or public computers.
+</Tip>
+
+## Account security
+
+### Secure your account
+
+**Best practices:**
+- Use a strong, unique password
+- Enable two-factor authentication (coming soon)
+- Don't share your password
+- Log out on shared devices
+- Review active sessions regularly
+
+### Password reset
+
+Forgot your password? Reset it easily:
+
+<Steps>
+  <Step title="Click Forgot Password">
+    On the sign-in page, click **Forgot Password?**
+  </Step>
+
+  <Step title="Enter email">
+    Provide the email associated with your account
+  </Step>
+
+  <Step title="Check email">
+    Look for password reset email
+  </Step>
+
+  <Step title="Click reset link">
+    Link is valid for 1 hour
+  </Step>
+
+  <Step title="Set new password">
+    Enter and confirm your new password
+  </Step>
+
+  <Step title="Sign in">
+    Use your new password to log in
+  </Step>
+</Steps>
+
+++IMAGE: **Forgot Password page with email input field and "Send Reset Link" button**++
+
+<Warning>
+Password reset links expire after 1 hour for security. Request a new link if yours expires.
+</Warning>
+
+### Session management
+
+Freiya uses JWT (JSON Web Tokens) for secure session management:
+
+**Session features:**
+- **Secure tokens** - Encrypted and signed
+- **Auto-renewal** - Extends on activity
+- **Expiration** - 24 hours of inactivity
+- **Multi-device** - Sign in on multiple devices
+- **Logout** - Invalidates tokens
+
+### Account deletion
+
+Need to delete your account?
+
+<Steps>
+  <Step title="Go to Settings">
+    Navigate to **Settings → Account**
+  </Step>
+
+  <Step title="Find Delete Account">
+    Scroll to the danger zone section
+  </Step>
+
+  <Step title="Click Delete">
+    Click **Delete My Account**
+  </Step>
+
+  <Step title="Confirm deletion">
+    Type your email to confirm
+  </Step>
+
+  <Step title="Account deleted">
+    All data removed within 30 days
+  </Step>
+</Steps>
+
+<Danger>
+Account deletion is permanent! All papers, chats, annotations, and collections will be deleted. Export your data first if you want to keep it.
+</Danger>
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Verification email not received">
+    Try these steps:
+    1. Check spam/junk folder
+    2. Verify email address spelling
+    3. Wait 5-10 minutes for delivery
+    4. Click "Resend verification email"
+    5. Try a different email address
+    6. Contact support if still not received
+  </Accordion>
+
+  <Accordion title="Verification code expired">
+    Codes expire after 1 hour for security:
+    1. Click "Resend verification code"
+    2. Check email for new code
+    3. Enter new code promptly
+    4. Complete verification within 1 hour
+  </Accordion>
+
+  <Accordion title="Can't sign in with Google">
+    Possible issues:
+    1. Pop-ups blocked by browser (allow for freiya.app)
+    2. Third-party cookies disabled (enable for Google OAuth)
+    3. Browser extensions blocking OAuth
+    4. Try incognito/private mode
+    5. Try a different browser
+  </Accordion>
+
+  <Accordion title="Password reset email not received">
+    Check these items:
+    1. Spam/junk folder
+    2. Email address is correct
+    3. Wait a few minutes
+    4. Request another reset
+    5. Contact support if persistent
+  </Accordion>
+
+  <Accordion title="Account already exists">
+    This means:
+    - Email is already registered
+    - Try signing in instead of signing up
+    - Use password reset if you forgot your password
+    - Contact support if you believe this is an error
+  </Accordion>
+</AccordionGroup>
+
+## After signing up
+
+Once your account is created and verified:
+
+<CardGroup cols={2}>
+  <Card title="Quick start guide" icon="rocket" href="/quickstart">
+    Get up and running in 5 minutes
+  </Card>
+
+  <Card title="Add your first paper" icon="file-lines" href="/features/paper-management">
+    Learn how to import papers to your library
+  </Card>
+
+  <Card title="Try AI chat" icon="comments" href="/features/ai-chat">
+    Start a conversation with AI
+  </Card>
+
+  <Card title="Account settings" icon="gear" href="/account/settings">
+    Customize your preferences
+  </Card>
+</CardGroup>
+
+## Privacy and data
+
+**Your data is yours:**
+- Encrypted in transit and at rest
+- Never shared without permission
+- GDPR compliant
+- Can be exported anytime
+- Deleted on request
+
+**What we collect:**
+- Email and name (for your account)
+- Papers you add (stored securely)
+- Chats and annotations (private to you)
+- Usage analytics (anonymized)
+
+Read our [Privacy Policy](https://freiya.app/privacy) for complete details.
+
+## Need help?
+
+Having trouble signing up or signing in?
+
+- 📧 Email: support@freiya.app
+- 📚 Check our [troubleshooting guide](#troubleshooting)
+- 💬 Contact support through the help widget
+
+Welcome to Freiya! We're excited to help you streamline your research.

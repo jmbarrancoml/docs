@@ -1,0 +1,553 @@
+---
+title: "AI chat assistant"
+description: "Learn how to use Freiya's AI chat system with multiple models, usage tracking, boost credits, and conversation management"
+icon: "comments"
+---
+
+Freiya's AI chat assistant is your intelligent research companion. Ask questions, explore topics, analyze papers, and get instant insights powered by state-of-the-art language models.
+
+++IMAGE: **Full chat interface showing a conversation about research methodology, with the model selector dropdown at the top, message history in the center, and input box at the bottom**++
+
+## Overview
+
+The AI chat system uses LangChain to orchestrate conversations with multiple AI providers including OpenAI and Google AI. Your conversations are saved automatically, searchable, and can be organized into collections or shared with colleagues.
+
+**Key capabilities:**
+- Multiple AI models for different use cases
+- Context-aware conversations with memory
+- Real-time streaming responses
+- Usage tracking and limits by tier
+- Boost system for extra messages
+- Save, organize, and share conversations
+
+## Available AI models
+
+Freiya provides access to different AI models based on your subscription tier. Each model is optimized for specific tasks and use cases.
+
+### Model types
+
+<Tabs>
+  <Tab title="Standard models">
+    **Best for:** Everyday research questions, quick lookups, general inquiries
+
+    Standard models provide solid performance for most research tasks. They're fast, reliable, and included in all tiers including Free.
+
+    **Use cases:**
+    - Explaining basic concepts
+    - Summarizing paper abstracts
+    - Generating research questions
+    - Brainstorming ideas
+    - Quick fact checking
+  </Tab>
+
+  <Tab title="Advanced models">
+    **Best for:** Complex analysis, in-depth reasoning, technical topics
+
+    Advanced models offer superior reasoning capabilities and can handle more nuanced queries. Available on Pro tier and above.
+
+    **Use cases:**
+    - Deep paper analysis
+    - Methodology critique
+    - Statistical interpretation
+    - Literature synthesis
+    - Complex problem solving
+  </Tab>
+
+  <Tab title="Specialized models">
+    **Best for:** Domain-specific research, specialized analysis
+
+    Specialized models are optimized for specific academic fields or tasks. Available on Nova and Unlimited tiers.
+
+    **Use cases:**
+    - Domain-specific terminology
+    - Field-specific analysis
+    - Specialized methodologies
+    - Technical deep dives
+  </Tab>
+</Tabs>
+
+<Info>
+Your subscription tier determines which models you can access. See [subscription tiers](/account/subscription-tiers) for model availability by plan.
+</Info>
+
+## Starting a conversation
+
+Creating and managing chats in Freiya is simple and intuitive.
+
+### Create a new chat
+
+<Steps>
+  <Step title="Open chat">
+    Click **Chat** in the sidebar or press `Ctrl/Cmd + N`
+  </Step>
+
+  <Step title="Select a model">
+    Choose your preferred AI model from the dropdown at the top
+  </Step>
+
+  <Step title="Type your message">
+    Enter your question or prompt in the input box
+  </Step>
+
+  <Step title="Send">
+    Press `Enter` or click the send button (use `Shift + Enter` for line breaks)
+  </Step>
+</Steps>
+
+++IMAGE: **Close-up of the chat input area showing the message input box with placeholder text, send button, and model selector dropdown above it**++
+
+<Tip>
+Start with a clear, specific question. The more context you provide, the better the AI can assist you.
+</Tip>
+
+### Example prompts
+
+**Good prompts:**
+```
+Explain the difference between supervised and unsupervised learning
+in the context of medical image analysis.
+
+Summarize the key findings from the paper "Attention Is All You Need"
+and explain why the transformer architecture was revolutionary.
+
+What are the main limitations of this methodology, and how might
+I address them in my research design?
+```
+
+**Less effective prompts:**
+```
+Tell me about machine learning
+What's this paper about?
+Help with research
+```
+
+## Chat interface features
+
+### Message display
+
+All messages support rich formatting:
+
+- **Markdown rendering** - Bold, italics, lists, and more
+- **Code blocks** - Syntax-highlighted code in 100+ languages
+- **Math equations** - LaTeX math rendered with KaTeX
+- **Tables** - Formatted tables for structured data
+- **Links** - Clickable URLs and references
+
+++IMAGE: **Chat message showing various formatted elements: a code block with syntax highlighting, a mathematical equation, a table, and a bulleted list**++
+
+### Message actions
+
+Hover over any message to access quick actions:
+
+| Action | Description | Shortcut |
+|--------|-------------|----------|
+| Copy | Copy message content to clipboard | `Ctrl/Cmd + C` |
+| Regenerate | Generate a new response | `Ctrl/Cmd + R` |
+| Edit | Edit your message and resend | `Ctrl/Cmd + ↑` |
+| Delete | Remove message from chat | `Delete` |
+| Vote | Thumbs up/down for feedback | - |
+
+### Streaming responses
+
+Responses stream in real-time, so you see the AI "thinking" as it generates text. You can:
+- **Read as it types** - Start reading before the response finishes
+- **Stop generation** - Click stop if you have enough information
+- **Copy partial** - Copy text even while streaming
+
+## Usage tracking
+
+Freiya tracks your AI usage to ensure fair access and manage costs. Each model type has separate limits.
+
+### How usage works
+
+<Steps>
+  <Step title="Monthly allocation">
+    Your tier determines how many messages you get per model type each month
+  </Step>
+
+  <Step title="Per-message deduction">
+    Each message you send consumes one message credit for that model
+  </Step>
+
+  <Step title="Real-time tracking">
+    See your remaining messages for each model in the interface
+  </Step>
+
+  <Step title="Monthly reset">
+    All limits reset on the 1st of each month
+  </Step>
+</Steps>
+
+++IMAGE: **Usage indicator showing message count like "42/100 messages remaining this month" with a small progress bar**++
+
+### View usage statistics
+
+Navigate to **Settings → Usage** to see:
+- Messages used per model type
+- Messages remaining
+- Next reset date
+- Historical usage charts
+- Boost balance
+
+<Note>
+Unlimited tier users see "∞" for all models—no message limits!
+</Note>
+
+## Boost system
+
+Boosts are extra message credits that work across all model types. They're perfect for those times when you need more than your monthly allocation.
+
+### What are boosts?
+
+- **One-time credits** - Don't expire or reset
+- **Universal** - Work with any model type
+- **Stackable** - Accumulate as you purchase or earn them
+- **Automatic** - Used automatically when monthly limits are reached
+
+### How boosts work
+
+<Steps>
+  <Step title="Use monthly allocation first">
+    Freiya uses your regular monthly messages first
+  </Step>
+
+  <Step title="Switch to boosts">
+    When monthly messages run out, boosts are used automatically
+  </Step>
+
+  <Step title="Track boost balance">
+    See remaining boosts in Settings → Usage
+  </Step>
+
+  <Step title="Purchase more">
+    Buy additional boosts anytime (coming soon)
+  </Step>
+</Steps>
+
+<Tip>
+Boosts are great for handling usage spikes without upgrading your entire plan.
+</Tip>
+
+## Managing conversations
+
+### Chat titles
+
+Chats are automatically titled based on your first message. You can rename them anytime:
+
+1. Click the chat title or triple-dot menu
+2. Select **Rename**
+3. Enter a new title
+4. Press `Enter` to save
+
+++IMAGE: **Chat title being edited inline, showing the editable text field with a cursor**++
+
+### Pinning chats
+
+Pin important conversations to keep them at the top of your sidebar:
+
+1. Hover over a chat in the sidebar
+2. Click the pin icon
+3. Pinned chats appear in a "Pinned" section at the top
+
+**Use cases for pinning:**
+- Active research projects
+- Frequently referenced conversations
+- Important methodology discussions
+- Ongoing brainstorming sessions
+
+### Chat organization
+
+**Sidebar features:**
+- **Search** - Find chats by title or content
+- **Filter by date** - Today, Yesterday, Last 7 days, etc.
+- **Filter by tags** - Organize with custom tags (coming soon)
+- **Sort options** - By date, title, or relevance
+
+++IMAGE: **Chat sidebar showing pinned chats at the top, followed by date-grouped chats (Today, Yesterday, Last 7 days), with a search box at the top**++
+
+### Deleting chats
+
+Remove conversations you no longer need:
+
+1. Open the chat or hover in sidebar
+2. Click the triple-dot menu
+3. Select **Delete**
+4. Confirm deletion
+
+<Warning>
+Deleting a chat is permanent and cannot be undone. Consider exporting important chats before deleting.
+</Warning>
+
+## Chat collections
+
+Group related conversations into collections for better organization.
+
+### Creating chat collections
+
+<Steps>
+  <Step title="Navigate to Collections">
+    Click **Collections** in the sidebar
+  </Step>
+
+  <Step title="Create new collection">
+    Click **New Chat Collection**
+  </Step>
+
+  <Step title="Name and configure">
+    Enter name, description, and choose a color
+  </Step>
+
+  <Step title="Add chats">
+    Add existing chats to your new collection
+  </Step>
+</Steps>
+
+**Example collections:**
+- "Thesis Research" - All chats related to your thesis
+- "Methodology Discussions" - Chats about research methods
+- "Literature Review" - Conversations about papers you've read
+- "Project Ideas" - Brainstorming and planning chats
+
+<Info>
+Free tier: 2 chat collections. Pro/Nova: 20 collections. Unlimited: No limit.
+</Info>
+
+[Learn more about collections →](/features/collections)
+
+## Sharing conversations
+
+Share interesting conversations with colleagues, on social media, or for reference.
+
+### Create a shareable link
+
+<Steps>
+  <Step title="Open the chat">
+    Navigate to the chat you want to share
+  </Step>
+
+  <Step title="Click Share">
+    Click the share icon or **Share** button
+  </Step>
+
+  <Step title="Generate link">
+    Freiya creates a unique, read-only URL
+  </Step>
+
+  <Step title="Copy and share">
+    Copy the link and share it anywhere
+  </Step>
+</Steps>
+
+++IMAGE: **Share dialog modal showing a generated shareable link with a "Copy Link" button and view count displayed**++
+
+### Share features
+
+- **Read-only access** - Recipients can view but not edit
+- **No login required** - Anyone with the link can access
+- **View tracking** - See how many times it's been viewed
+- **Deactivate anytime** - Revoke access whenever you want
+- **Access token security** - Unique token prevents guessing
+
+<Warning>
+Shared chats are publicly accessible to anyone with the link. Don't share sensitive research before publication.
+</Warning>
+
+## Paper-linked chats
+
+Create chats specifically about a paper to get context-aware responses.
+
+### How to link a paper
+
+**Method 1: From paper detail page**
+1. Open a paper in your library
+2. Click **Chat about this paper**
+3. New chat opens with paper context
+
+**Method 2: During chat**
+1. Mention the paper title in your message
+2. Freiya suggests linking the paper
+3. Confirm to add context
+
+**Benefits of paper-linked chats:**
+- AI has full paper metadata
+- More accurate, contextual responses
+- References specific sections
+- Links preserved in chat
+
+++IMAGE: **Chat interface showing a paper-linked conversation with a small paper card/badge at the top indicating which paper is linked to this chat**++
+
+## Context and memory
+
+Freiya maintains conversation context throughout your chat session.
+
+### How context works
+
+- **Full chat history** - AI sees all previous messages
+- **Smart trimming** - Long chats are condensed intelligently
+- **Persistent memory** - Context saved between sessions
+- **Token management** - Automatic optimization for long conversations
+
+<Tip>
+For best results, keep conversations focused on a single topic. Start a new chat for different subjects.
+</Tip>
+
+## Advanced features
+
+### Model comparison
+
+Compare responses from different models:
+
+1. Get a response from one model
+2. Switch to another model
+3. Ask the same question
+4. Compare the different approaches
+
+### Export conversations
+
+Export chats for reference or archival:
+
+1. Open the chat
+2. Click **Export**
+3. Choose format (Markdown, PDF, or Text)
+4. Download the file
+
+**Use cases:**
+- Archive important conversations
+- Include in research notes
+- Share with collaborators
+- Document AI assistance in your work
+
+### Chat with documents (coming soon)
+
+Upload documents directly to chats for AI analysis:
+- Ask questions about uploaded PDFs
+- Analyze data files
+- Extract information from documents
+- Compare multiple documents
+
+## Best practices
+
+<CardGroup cols={2}>
+  <Card title="Be specific" icon="crosshairs">
+    Provide context and details in your questions for better responses
+  </Card>
+
+  <Card title="Iterate" icon="arrows-rotate">
+    Refine your questions based on responses. Ask follow-ups for clarity
+  </Card>
+
+  <Card title="Verify information" icon="circle-check">
+    Always verify AI responses against source materials
+  </Card>
+
+  <Card title="Organize chats" icon="folder">
+    Use collections and clear titles to keep conversations organized
+  </Card>
+</CardGroup>
+
+### Effective prompting tips
+
+1. **Start with context** - Explain what you're working on
+2. **Be specific** - Ask precise questions rather than broad ones
+3. **Request format** - Specify if you want lists, paragraphs, or tables
+4. **Provide examples** - Show the AI what you're looking for
+5. **Follow up** - Build on previous responses with clarifying questions
+
+**Example progressive conversation:**
+```
+You: I'm researching neural network optimization for medical imaging.
+
+You: What are the current state-of-the-art optimization algorithms
+used in this field?
+
+AI: [Provides response about Adam, RMSprop, etc.]
+
+You: Can you compare Adam and RMSprop specifically for small
+medical imaging datasets (< 1000 samples)?
+
+AI: [Provides detailed comparison]
+
+You: What would be the best approach for my dataset of 500
+chest X-rays?
+```
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="I ran out of messages for my model">
+    You have three options:
+    1. Wait until the 1st of next month for your reset
+    2. Use boosts if you have any remaining
+    3. Switch to a different model type
+    4. Upgrade your tier for higher limits
+  </Accordion>
+
+  <Accordion title="The AI response seems incorrect">
+    AI models can make mistakes. Always:
+    - Verify against source materials
+    - Cross-check important facts
+    - Ask for clarification or sources
+    - Use multiple models for important queries
+  </Accordion>
+
+  <Accordion title="My chat history disappeared">
+    Chats are saved automatically, but:
+    - Check if you're logged into the correct account
+    - Look in the "All Chats" view, not just "Recent"
+    - Check if you accidentally deleted it
+    - Contact support if the issue persists
+  </Accordion>
+
+  <Accordion title="The response stopped mid-sentence">
+    This can happen due to:
+    - Token limits on the model
+    - Network interruption
+    - Click "Regenerate" to try again
+    - Or ask the AI to continue with "Please continue"
+  </Accordion>
+
+  <Accordion title="Can I use the AI for writing my papers?">
+    You can use AI as a research assistant, but:
+    - Always write in your own words
+    - Use AI for brainstorming and understanding
+    - Cite sources properly, not the AI
+    - Check your institution's AI usage policies
+    - Never submit AI-generated text as your own work
+  </Accordion>
+</AccordionGroup>
+
+## Keyboard shortcuts
+
+Speed up your chat workflow:
+
+| Action | Shortcut |
+|--------|----------|
+| New chat | `Ctrl/Cmd + N` |
+| Send message | `Enter` |
+| New line | `Shift + Enter` |
+| Edit last message | `Ctrl/Cmd + ↑` |
+| Regenerate | `Ctrl/Cmd + R` |
+| Copy message | `Ctrl/Cmd + C` (hover on message) |
+| Delete message | `Delete` (hover on message) |
+
+[See all shortcuts →](/reference/keyboard-shortcuts)
+
+## Related features
+
+<CardGroup cols={2}>
+  <Card title="Paper management" icon="file-lines" href="/features/paper-management">
+    Link papers to chats for context-aware conversations
+  </Card>
+
+  <Card title="Collections" icon="folder" href="/features/collections">
+    Organize chats into topic-based collections
+  </Card>
+
+  <Card title="Subscription tiers" icon="layer-group" href="/account/subscription-tiers">
+    Compare model access across different plans
+  </Card>
+
+  <Card title="Tips & best practices" icon="lightbulb" href="/guides/tips-best-practices">
+    Learn advanced strategies for using AI chat effectively
+  </Card>
+</CardGroup>

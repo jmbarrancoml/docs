@@ -1,0 +1,660 @@
+---
+title: "Admin tools"
+description: "Administrative dashboard and tools for monitoring, managing, and maintaining the Freiya platform (admin users only)"
+icon: "screwdriver-wrench"
+---
+
+<Warning>
+This page is only relevant for users with administrative privileges. Regular users won't have access to these tools.
+</Warning>
+
+Admin tools provide platform administrators with powerful capabilities to monitor system health, manage users, view analytics, and maintain the Freiya platform.
+
+++IMAGE: **Admin dashboard overview showing key metrics cards (total users, active subscriptions, system health), navigation menu, and recent activity feed**++
+
+## Accessing admin tools
+
+### Admin authentication
+
+Admin access is restricted and requires special privileges:
+
+**Access requirements:**
+- User account with `admin` role
+- Valid authentication token
+- Admin flag enabled in user record
+
+**Access path:**
+Navigate to `/internal-tools` or click **Admin** in the user menu (if you have permissions)
+
+<Info>
+If you don't see the Admin option, you don't have administrative privileges. Contact your system administrator.
+</Info>
+
+### Admin route protection
+
+The admin section is protected by:
+- Server-side role verification
+- JWT token validation with admin claim
+- Middleware authentication checks
+- Separate routing (`ProtectedAdminRoute` component)
+
+## Admin dashboard
+
+The main dashboard provides an at-a-glance view of platform status.
+
+### Key metrics
+
+**User statistics:**
+- Total registered users
+- Active users (last 30 days)
+- New signups today/week/month
+- User growth rate
+- Churn rate
+
+**Subscription metrics:**
+- Active subscriptions by tier
+- Monthly recurring revenue (MRR)
+- Conversion rate (Free to paid)
+- Subscription changes (upgrades/downgrades)
+- Failed payments
+
+**Usage statistics:**
+- Total papers in system
+- Total chats created
+- AI messages sent today
+- API calls (if applicable)
+- Active sessions
+
+**System health:**
+- Database status
+- Vector store status
+- AI model availability
+- Error rate (last 24h)
+- Response times
+
+++IMAGE: **Admin dashboard metrics section showing cards with numbers, charts, and trend indicators (up/down arrows) for each metric category**++
+
+### Recent activity feed
+
+Real-time stream of platform events:
+- New user registrations
+- Subscription changes
+- Payment events
+- Error alerts
+- System warnings
+
+Each event shows:
+- Timestamp
+- Event type
+- User (if applicable)
+- Details
+- Status/severity
+
+## Views panel
+
+Located at `/internal-tools/views`, provides detailed data views.
+
+### User management view
+
+Comprehensive user administration:
+
+**User list features:**
+- Searchable user database
+- Filter by subscription tier
+- Filter by registration date
+- Filter by activity status
+- Sort by various criteria
+
+++IMAGE: **User management table showing columns for user ID, name, email, subscription tier, signup date, last active, and action buttons**++
+
+**Per-user actions:**
+- View full user profile
+- Check subscription status
+- View usage statistics
+- Reset password (send email)
+- Suspend account
+- Delete account
+- Override subscription limits
+- Grant/revoke admin privileges
+
+**Bulk actions:**
+- Export user list (CSV, JSON)
+- Send announcements
+- Apply tier changes
+- Extend trials
+
+### Subscription analytics view
+
+Deep dive into subscription data:
+
+**Metrics displayed:**
+- Revenue by tier
+- Subscription distribution (pie chart)
+- Churn analysis
+- Lifetime value (LTV) by tier
+- Conversion funnel
+- Payment success rate
+
+**Filters:**
+- Date range
+- Subscription tier
+- Subscription status (active, cancelled, expired)
+- Payment status
+
+**Export options:**
+- Revenue reports
+- Subscription lists
+- Churn analysis
+- Custom date ranges
+
+### Usage analytics view
+
+Understand how users engage with Freiya:
+
+**AI usage:**
+- Messages per model type
+- Most used models
+- Usage by tier
+- Peak usage times
+- Boost consumption
+
+**Paper statistics:**
+- Papers added per day/week/month
+- Average papers per user by tier
+- Most saved papers
+- DOI vs manual vs upload ratios
+- PDF view statistics
+
+**Feature usage:**
+- Chat feature engagement
+- PDF viewer sessions
+- Collection usage
+- Institution search queries
+- Export frequencies
+
+++IMAGE: **Usage analytics dashboard showing line charts for AI usage over time, bar charts for feature engagement, and heatmap for peak usage times**++
+
+### Content view
+
+Platform-wide content statistics:
+
+**Papers in system:**
+- Total unique papers
+- Papers by field/topic
+- Most cited papers
+- Most saved by users
+- Citation distribution
+- Open access percentage
+
+**Institutions:**
+- Total institutions indexed
+- Most researched institutions
+- Geographic distribution
+- Collaboration networks
+
+**Popular content:**
+- Trending research areas
+- Most active topics
+- Growing fields
+
+### Performance view
+
+Technical performance metrics:
+
+**API performance:**
+- Response times by endpoint
+- Slowest endpoints
+- Error rates
+- Timeout occurrences
+- Rate limit hits
+
+**Database performance:**
+- Query performance
+- Slow queries
+- Connection pool status
+- Storage usage
+- Index efficiency
+
+**Vector store:**
+- Query latency
+- Index size
+- Memory usage
+- Failed operations
+- Indexing queue
+
+**External services:**
+- Semantic Scholar API status
+- OpenAI API response times
+- Stripe API health
+- Email delivery rates
+
+++IMAGE: **Performance dashboard showing response time graphs, error rate charts, and service status indicators (green/yellow/red dots)**++
+
+## System health monitoring
+
+### Real-time status
+
+Monitor critical systems:
+
+**Services monitored:**
+1. **PostgreSQL database**
+   - Connection status
+   - Query performance
+   - Storage capacity
+   - Backup status
+
+2. **Qdrant vector store**
+   - Cluster health
+   - Index count
+   - Query latency
+   - Memory usage
+
+3. **AI models**
+   - OpenAI API status
+   - Google AI status
+   - Response times
+   - Error rates
+   - Rate limits
+
+4. **Stripe payments**
+   - API connectivity
+   - Webhook delivery
+   - Payment success rate
+
+5. **Email service**
+   - SMTP status
+   - Delivery rate
+   - Bounce rate
+
+++IMAGE: **System Health panel showing service cards with status indicators, uptime percentages, and key metrics for each service**++
+
+### Alerts and notifications
+
+**Alert types:**
+- Critical: Service down, data loss risk
+- Warning: Performance degradation, approaching limits
+- Info: Routine events, scheduled maintenance
+
+**Alert delivery:**
+- In-dashboard notifications
+- Email to admin team
+- Slack/Discord webhooks (configurable)
+- SMS for critical alerts (optional)
+
+### Health check endpoints
+
+Technical monitoring via API:
+
+```bash
+GET /api/health
+GET /api/health/database
+GET /api/health/vectorstore
+GET /api/health/ai-models
+```
+
+Useful for external monitoring tools (Datadog, New Relic, etc.)
+
+## User management
+
+### Individual user actions
+
+**View user profile:**
+- Complete account information
+- Subscription history
+- Usage statistics
+- Activity log
+- Papers and chats count
+
+**Manage subscription:**
+- Override subscription status
+- Extend trial periods
+- Grant temporary upgrades
+- Apply discounts manually
+- Cancel subscriptions
+
+**Account actions:**
+- Reset password (send email)
+- Verify email manually
+- Suspend account
+- Delete account
+- Merge duplicate accounts
+
+**Usage management:**
+- View message usage per model
+- Check boost balance
+- Grant bonus boosts
+- Reset limits manually
+- Override tier restrictions
+
+### Bulk operations
+
+**Mass actions:**
+- Export user lists with filters
+- Send platform announcements
+- Apply promotional credits
+- Force password resets (security)
+- Migrate subscription tiers
+
+**Use cases:**
+- Holiday promotions
+- Security incidents
+- Feature migrations
+- Billing corrections
+
+## Audit logs
+
+Track all administrative actions and system events.
+
+### Log types
+
+**User actions:**
+- Account creation/deletion
+- Login attempts (success/failure)
+- Password changes
+- Email verification
+
+**Admin actions:**
+- User modifications
+- Subscription changes
+- System configuration updates
+- Data exports
+
+**System events:**
+- Errors and exceptions
+- Performance issues
+- Security events
+- Scheduled tasks
+
+**Payment events:**
+- Successful payments
+- Failed payments
+- Refunds
+- Disputes
+
+### Log details
+
+Each log entry includes:
+- Timestamp (precise to millisecond)
+- Event type and category
+- User ID (if applicable)
+- Admin ID (for admin actions)
+- IP address
+- User agent
+- Before/after state (for changes)
+- Success/failure status
+- Error messages (if any)
+
+++IMAGE: **Audit log table showing columns for timestamp, event type, user, action taken, status, and "View Details" button**++
+
+### Log search and filtering
+
+**Filter options:**
+- Date range
+- Event type
+- User ID
+- Admin ID
+- Success/failure
+- Severity level
+
+**Search:**
+- Full-text search across logs
+- Field-specific queries
+- Regular expression support
+
+**Export:**
+- Download filtered logs as CSV/JSON
+- Compliance reports
+- Security audits
+
+## Configuration management
+
+### Platform settings
+
+**Feature flags:**
+- Enable/disable features globally
+- A/B testing configurations
+- Gradual rollout controls
+- Emergency shutoffs
+
+**Usage limits:**
+- Adjust tier limits
+- Set global rate limits
+- Configure API quotas
+- Throttling thresholds
+
+**Model availability:**
+- Enable/disable AI models
+- Set model priorities
+- Configure fallbacks
+- Adjust token limits
+
+### Email templates
+
+**Manage email content:**
+- Welcome emails
+- Verification emails
+- Password reset emails
+- Billing notifications
+- Feature announcements
+
+**Template editor:**
+- HTML and plain text versions
+- Variable substitution
+- Preview before sending
+- Version history
+
+### Pricing configuration
+
+**Subscription tiers:**
+- Adjust prices
+- Modify features per tier
+- Create promotional tiers
+- Grandfather old plans
+
+<Warning>
+Price changes typically affect new subscriptions only. Existing subscriptions maintain their pricing until renewal.
+</Warning>
+
+## Database administration
+
+### Direct database access
+
+<Danger>
+Database operations are powerful and dangerous. Always backup before making changes.
+</Danger>
+
+**Available operations:**
+- View table schemas
+- Run SELECT queries
+- Execute migrations
+- Database backups
+- Restore from backup
+
+**Safety features:**
+- Read-only mode option
+- Transaction support
+- Automatic backups before changes
+- Confirmation prompts
+- Audit logging of all queries
+
+### Data cleanup
+
+**Maintenance tasks:**
+- Remove orphaned records
+- Clean up expired sessions
+- Archive old data
+- Optimize indexes
+- Vacuum database
+
+**Scheduled maintenance:**
+- Automated cleanup jobs
+- Backup schedules
+- Index rebuilds
+- Statistics updates
+
+## Analytics and reporting
+
+### Custom reports
+
+**Report builder:**
+- Select metrics
+- Choose date ranges
+- Apply filters
+- Set grouping
+- Configure visualization
+
+**Report types:**
+- User growth
+- Revenue analysis
+- Feature adoption
+- Performance trends
+- Error reports
+
+**Delivery:**
+- Email delivery
+- Schedule automated reports
+- Export as PDF/Excel
+- Dashboard widgets
+
+### Data export
+
+**Export capabilities:**
+- Full database exports
+- Filtered data exports
+- User data (GDPR compliance)
+- Analytics data
+- Audit logs
+
+**Formats:**
+- CSV (for spreadsheets)
+- JSON (for processing)
+- SQL dumps (for backups)
+- PDF (for reports)
+
+## Security features
+
+### Security monitoring
+
+**Track security events:**
+- Failed login attempts
+- Unusual access patterns
+- API abuse
+- Potential attacks
+- Data breach attempts
+
+**Automated responses:**
+- Rate limiting
+- IP blocking
+- Account suspension
+- Alert generation
+
+### Access control
+
+**Admin roles:**
+- Super admin (full access)
+- User admin (user management only)
+- Analytics viewer (read-only)
+- Support admin (limited actions)
+
+**Permission management:**
+- Grant/revoke permissions
+- Role-based access control
+- Audit permission changes
+- Temporary elevated access
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Can't access admin panel">
+    Verify:
+    - You have admin role in database
+    - JWT token includes admin claim
+    - Not using cached/old token
+    - Correct URL: /internal-tools
+    - Check with super admin if issue persists
+  </Accordion>
+
+  <Accordion title="Metrics not updating">
+    Possible causes:
+    - Cache not refreshed (wait or force refresh)
+    - Background jobs not running
+    - Database connection issues
+    - Check system health dashboard
+  </Accordion>
+
+  <Accordion title="Can't modify user">
+    Check:
+    - Your admin permissions level
+    - User isn't another admin (requires super admin)
+    - Database write access
+    - No conflicting operations
+  </Accordion>
+
+  <Accordion title="Audit logs not showing">
+    Verify:
+    - Logging is enabled in config
+    - Database has audit_logs table
+    - Sufficient storage space
+    - No log rotation issues
+  </Accordion>
+</AccordionGroup>
+
+## Best practices
+
+<CardGroup cols={2}>
+  <Card title="Review regularly" icon="calendar-check">
+    Check dashboard daily for anomalies
+  </Card>
+
+  <Card title="Monitor alerts" icon="bell">
+    Act on critical alerts immediately
+  </Card>
+
+  <Card title="Backup first" icon="cloud-arrow-down">
+    Always backup before major changes
+  </Card>
+
+  <Card title="Audit actions" icon="list-check">
+    Review audit logs weekly
+  </Card>
+</CardGroup>
+
+### Admin workflow
+
+**Daily:**
+- Check dashboard metrics
+- Review critical alerts
+- Monitor system health
+- Check failed payments
+
+**Weekly:**
+- Review user growth
+- Analyze usage trends
+- Check audit logs
+- Performance review
+
+**Monthly:**
+- Generate reports
+- Review security logs
+- Plan capacity
+- Update documentation
+
+## Related resources
+
+<CardGroup cols={2}>
+  <Card title="Keyboard shortcuts" icon="keyboard" href="/reference/keyboard-shortcuts">
+    Admin panel shortcuts for faster workflow
+  </Card>
+
+  <Card title="Subscription tiers" icon="layer-group" href="/account/subscription-tiers">
+    Understand tier features for user management
+  </Card>
+
+  <Card title="Settings" icon="gear" href="/account/settings">
+    Regular user settings (non-admin)
+  </Card>
+</CardGroup>
+
+---
+
+**Admin support:** For technical questions about admin tools, contact the development team or refer to internal documentation.
