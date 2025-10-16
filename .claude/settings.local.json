@@ -10,7 +10,11 @@
       "Bash(git rm:*)",
       "Bash(curl:*)",
       "Bash(git add:*)",
-      "WebFetch(domain:www.mintlify.com)"
+      "WebFetch(domain:www.mintlify.com)",
+      "WebFetch(domain:mintlify.com)",
+      "Bash(for file in features/*.mdx account/*.mdx guides/*.mdx reference/*.mdx)",
+      "Bash(done)",
+      "Bash(python replace_images.py:*)"
     ],
     "deny": [],
     "ask": []
