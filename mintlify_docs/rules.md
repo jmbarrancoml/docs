@@ -404,11 +404,11 @@ Use for:
 
 **Example:**
 ```markdown
-| Feature | Free | Pro | Unlimited |
-|---------|------|-----|-----------|
-| Papers | 5 | 500 | Unlimited |
-| Collections | 2 | 20 | Unlimited |
-| AI models | Basic | Advanced | All |
+| Feature | Free | Pro | Nova |
+|---------|------|-----|------|
+| Papers | 5 | 500 | 500 |
+| Collections | 2 | 20 | 20 |
+| AI models | Basic | Advanced | Specialized |
 ```
 
 ---

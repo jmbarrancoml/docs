@@ -44,7 +44,7 @@ Freiya aims to make academic research more accessible, organized, and efficient 
 | **Institution Search** | Track and explore academic institutions |
 | **Smart Search** | Vector-based semantic search across papers |
 | **Citation Management** | Generate citations in multiple formats |
-| **Subscription Tiers** | Flexible plans from Free to Unlimited |
+| **Subscription Tiers** | Flexible plans from Free to Nova |
 
 ### Target Users
 
@@ -426,7 +426,6 @@ chat_collection_relationships:
 **Collection Limits:**
 - Free: 2 chat collections
 - Pro/Nova: 20 chat collections
-- Unlimited: No limit
 
 ### Error Handling
 
@@ -683,7 +682,6 @@ Located at `/paper/:paperId`, displays:
 | Free | 5 | 5 |
 | Pro | 500 | 500 |
 | Nova | 500 | 500 |
-| Unlimited | ∞ | ∞ |
 
 **Monthly Limits:**
 - Reset on the 1st of each month
@@ -887,7 +885,6 @@ chat_collection_relationships:
 | Free | 2 |
 | Pro | 20 |
 | Nova | 20 |
-| Unlimited | ∞ |
 
 **Chat Collections:**
 | Tier | Max Collections |
@@ -895,7 +892,6 @@ chat_collection_relationships:
 | Free | 2 |
 | Pro | 20 |
 | Nova | 20 |
-| Unlimited | ∞ |
 
 **Limit Enforcement:**
 - Clear warning when approaching limit
@@ -1484,56 +1480,23 @@ Freiya offers flexible subscription tiers to accommodate researchers at differen
 - Advanced integrations
 - Premium support tier
 
-#### Unlimited Tier
-
-**Price:** (To be determined)
-
-**Features:**
-- Unlimited papers in library
-- Unlimited papers per month
-- Unlimited paper collections
-- Unlimited chat collections
-- Access to all AI models
-- Unlimited usage
-- 24/7 premium support
-- All advanced features
-- Custom features
-- White-label options (enterprise)
-- Dedicated account manager
-- SLA guarantees
-
-**Best For:**
-- Research institutions
-- Large research teams
-- Enterprise users
-- Heavy platform users
-
-**Enterprise Features:**
-- No limits on any feature
-- Custom contracts
-- Bulk licensing
-- Team management
-- Advanced security
-- Dedicated infrastructure
-- Custom integrations
-
 ### Feature Comparison Table
 
-| Feature | Free | Pro | Nova | Unlimited |
-|---------|------|-----|------|-----------|
-| Papers in Library | 5 | 500 | 500 | ∞ |
-| Papers/Month | 5 | 500 | 500 | ∞ |
-| Paper Collections | 2 | 20 | 20 | ∞ |
-| Chat Collections | 2 | 20 | 20 | ∞ |
-| AI Models | Basic | Advanced | Specialized | All |
-| PDF Upload Size | 10MB | 50MB | 100MB | 500MB |
-| Usage Limits | Standard | High | Premium | Unlimited |
-| Support | Email | Priority | Priority | 24/7 Premium |
-| Highlights | Basic | Advanced | Advanced | Advanced |
-| Export | Limited | Full | Full | Full |
-| API Access | ❌ | ❌ | Future | ✅ |
-| Analytics | Basic | Advanced | Advanced | Custom |
-| Collaboration | ❌ | Basic | Advanced | Enterprise |
+| Feature | Free | Pro | Nova |
+|---------|------|-----|------|
+| Papers in Library | 5 | 500 | 500 |
+| Papers/Month | 5 | 500 | 500 |
+| Paper Collections | 2 | 20 | 20 |
+| Chat Collections | 2 | 20 | 20 |
+| AI Models | Basic | Advanced | Specialized |
+| PDF Upload Size | 10MB | 50MB | 100MB |
+| Usage Limits | Standard | High | Premium |
+| Support | Email | Priority | Priority |
+| Highlights | Basic | Advanced | Advanced |
+| Export | Limited | Full | Full |
+| API Access | ❌ | ❌ | Future |
+| Analytics | Basic | Advanced | Advanced |
+| Collaboration | ❌ | Basic | Advanced |
 
 ### Tier Limits Configuration
 
@@ -1554,11 +1517,6 @@ const TIER_LIMITS = {
     papers: { max: 500, perMonth: 500 },
     collections: { max: 20 },
     chatCollections: { max: 20 }
-  },
-  Unlimited: {
-    papers: { max: -1, perMonth: -1 },
-    collections: { max: -1 },
-    chatCollections: { max: -1 }
   }
 };
 ```
@@ -2509,11 +2467,11 @@ Tags:
 - Literature review projects
 - Multiple active research areas
 
-**Unlimited Tier - Best For:**
-- Research faculty
-- Large research teams
-- Extensive paper libraries
-- Professional researchers
+**Nova Tier - Best For:**
+- Researchers with specialized needs
+- Domain experts
+- Large research projects
+- Professional researchers requiring advanced AI models
 
 **Upgrade Triggers:**
 - Hitting paper limit frequently

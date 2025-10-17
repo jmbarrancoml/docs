@@ -704,8 +704,8 @@ Standard Markdown tables are supported:
 ```markdown
 | Feature | Free | Pro | Enterprise |
 |---------|------|-----|------------|
-| Users | 1 | 10 | Unlimited |
-| Storage | 1GB | 100GB | Unlimited |
+| Users | 1 | 10 | 100 |
+| Storage | 1GB | 100GB | 1TB |
 | Support | Community | Email | 24/7 Phone |
 ```
 
