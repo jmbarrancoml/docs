@@ -44,7 +44,7 @@ This is a paragraph.
 ```
 
 **MDX with Components:**
-```mdx
+```jsx
 # Hello World
 This is a paragraph.
 
@@ -112,42 +112,42 @@ Callouts add eye-catching context to your content. Mintlify provides six built-i
 #### Built-in Callout Types
 
 **Note** - Adds supplementary information
-```mdx
+```jsx
 <Note>
 This is important information to keep in mind.
 </Note>
 ```
 
 **Warning** - Alerts users to potential issues
-```mdx
+```jsx
 <Warning>
 Be careful when performing this operation!
 </Warning>
 ```
 
 **Info** - Emphasizes critical details
-```mdx
+```jsx
 <Info>
 This feature is available in Pro tier and above.
 </Info>
 ```
 
 **Tip** - Offers helpful suggestions
-```mdx
+```jsx
 <Tip>
 You can use keyboard shortcuts to speed up your workflow!
 </Tip>
 ```
 
 **Check** - Indicates completed or verified status
-```mdx
+```jsx
 <Check>
 Your installation was successful!
 </Check>
 ```
 
 **Danger** - Signals serious concerns
-```mdx
+```jsx
 <Danger>
 This action cannot be undone!
 </Danger>
@@ -157,7 +157,7 @@ This action cannot be undone!
 
 Create personalized callouts with custom icons and colors:
 
-```mdx
+```jsx
 <Callout icon="key" color="#FFC107" iconType="regular">
 API keys are sensitive credentials. Never commit them to version control.
 </Callout>
@@ -176,7 +176,7 @@ Cards create clickable tiles that can link to other pages or external resources.
 
 #### Single Card
 
-```mdx
+```jsx
 <Card
   title="Getting Started"
   icon="rocket"
@@ -190,7 +190,7 @@ Cards create clickable tiles that can link to other pages or external resources.
 
 Group multiple cards in a responsive grid:
 
-```mdx
+```jsx
 <CardGroup cols={2}>
   <Card
     title="Quick Start"
@@ -239,7 +239,7 @@ Group multiple cards in a responsive grid:
 
 Steps component displays sequential content with numbered indicators.
 
-```mdx
+```jsx
 <Steps>
   <Step title="Install dependencies">
     Run `npm install` to install all required packages.
@@ -263,7 +263,7 @@ Steps component displays sequential content with numbered indicators.
 
 #### Steps with Custom Icons
 
-```mdx
+```jsx
 <Steps>
   <Step title="Download" icon="download" iconType="solid">
     Download the latest release from GitHub.
@@ -285,7 +285,7 @@ Steps component displays sequential content with numbered indicators.
 
 Tabs organize content into multiple panels that users can switch between.
 
-```mdx
+```jsx
 <Tabs>
   <Tab title="JavaScript">
     ```javascript
@@ -320,7 +320,7 @@ Tabs organize content into multiple panels that users can switch between.
 
 CodeGroup creates tabbed code blocks for showing the same operation in different languages or contexts.
 
-```mdx
+```jsx
 <CodeGroup>
 
 ```javascript index.js
@@ -362,7 +362,7 @@ Accordions create collapsible sections for organizing content.
 
 #### Single Accordion
 
-```mdx
+```jsx
 <Accordion title="What is Mintlify?">
   Mintlify is a modern documentation platform that helps developers create beautiful, interactive documentation websites.
 </Accordion>
@@ -370,7 +370,7 @@ Accordions create collapsible sections for organizing content.
 
 #### AccordionGroup
 
-```mdx
+```jsx
 <AccordionGroup>
   <Accordion title="What is Mintlify?">
     Mintlify is a modern documentation platform that helps developers create beautiful, interactive documentation websites.
@@ -397,7 +397,7 @@ Accordions create collapsible sections for organizing content.
 
 Frame wraps images or components in a container with optional caption.
 
-```mdx
+```jsx
 <Frame>
   ![Dashboard Screenshot](/images/dashboard.png)
 </Frame>
@@ -405,7 +405,7 @@ Frame wraps images or components in a container with optional caption.
 
 #### Frame with Caption
 
-```mdx
+```jsx
 <Frame caption="The main dashboard view showing analytics">
   ![Dashboard Screenshot](/images/dashboard.png)
 </Frame>
@@ -421,7 +421,7 @@ Frame wraps images or components in a container with optional caption.
 
 Display inline icons within text or standalone.
 
-```mdx
+```jsx
 Click the <Icon icon="gear" /> icon to open settings.
 ```
 
@@ -433,7 +433,7 @@ Click the <Icon icon="gear" /> icon to open settings.
 
 #### Icon Examples
 
-```mdx
+```jsx
 <Icon icon="rocket" iconType="solid" size="32" color="#FF5733" />
 
 <Icon icon="github" iconType="brands" />
@@ -447,7 +447,7 @@ Click the <Icon icon="gear" /> icon to open settings.
 
 Define parameters for APIs or functions. Automatically generates API playgrounds.
 
-```mdx
+```jsx
 <ParamField path="user_id" type="string" required>
   The unique identifier for the user
 </ParamField>
@@ -473,7 +473,7 @@ Define parameters for APIs or functions. Automatically generates API playgrounds
 
 #### Array Types
 
-```mdx
+```jsx
 <ParamField path="tags" type="string[]">
   Array of tag strings
 </ParamField>
@@ -489,7 +489,7 @@ Define parameters for APIs or functions. Automatically generates API playgrounds
 
 Define return values and response structures for APIs.
 
-```mdx
+```jsx
 <ResponseField name="id" type="string">
   Unique identifier for the created resource
 </ResponseField>
@@ -514,7 +514,7 @@ Define return values and response structures for APIs.
 
 Toggle to display nested properties, great for complex object documentation.
 
-```mdx
+```jsx
 <Expandable title="user_object">
   <ResponseField name="id" type="string">
     User's unique identifier
@@ -550,7 +550,7 @@ Toggle to display nested properties, great for complex object documentation.
 
 Show definitions when hovering over text.
 
-```mdx
+```jsx
 <Tooltip tip="Application Programming Interface">
   API
 </Tooltip>
@@ -668,7 +668,7 @@ export class UserService {
 
 #### Image with Frame and Caption
 
-```mdx
+```jsx
 <Frame caption="Dashboard overview showing key metrics">
   ![Dashboard](/images/dashboard.png)
 </Frame>
@@ -676,7 +676,7 @@ export class UserService {
 
 #### Disable Zoom on Click
 
-```mdx
+```jsx
 <img src="/images/logo.png" alt="Logo" noZoom />
 ```
 
@@ -684,14 +684,14 @@ export class UserService {
 
 Use Tailwind CSS classes to show different images based on theme:
 
-```mdx
+```jsx
 <img src="/images/light-mode.png" className="block dark:hidden" />
 <img src="/images/dark-mode.png" className="hidden dark:block" />
 ```
 
 #### Linked Images
 
-```mdx
+```jsx
 <a href="https://example.com" target="_blank">
   <img src="/images/clickable.png" noZoom />
 </a>
@@ -839,7 +839,7 @@ For MDX-based API documentation:
 
 Always add blank lines around components for proper rendering:
 
-```mdx
+```jsx
 Regular paragraph text.
 
 <Note>
@@ -853,7 +853,7 @@ More paragraph text.
 
 Indent content inside components by 2 spaces:
 
-```mdx
+```jsx
 <Card title="Example">
   This content is properly indented.
 
@@ -956,7 +956,7 @@ Install the **Mintlify MDX** extension for enhanced development experience:
 
 ### Components
 
-```mdx
+```jsx
 <Note>Information</Note>
 <Warning>Caution</Warning>
 <Tip>Helpful advice</Tip>
