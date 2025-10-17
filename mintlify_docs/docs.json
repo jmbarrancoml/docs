@@ -16,12 +16,12 @@
   "topbarLinks": [
     {
       "name": "Sign In",
-      "url": "https://freiya.app/auth/signin"
+      "url": "https://freiya.ederspark.com/auth/signin"
     }
   ],
   "topbarCtaButton": {
     "name": "Get Started",
-    "url": "https://freiya.app/auth/signup"
+    "url": "https://freiya.ederspark.com/auth/signup"
   },
   "navigation": [
     {
