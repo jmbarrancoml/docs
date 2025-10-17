@@ -220,33 +220,11 @@ user_model_usage:
   - update_rate (monthly/weekly)
 ```
 
-### Boost System
-
-**What are Boosts?**
-Boosts are additional message credits that can be used when regular allocation is exhausted.
-
-**Boost Features:**
-- One-time use message credits
-- Work across all model types
-- Don't expire
-- Can be purchased or earned
-- Tracked separately from monthly allocation
-
-**Database Schema:**
-```sql
-user_boosts:
-  - user_id
-  - total_boosts (lifetime acquired)
-  - boosts_used (consumed)
-  - boosts_left (available)
-```
-
 **Usage History:**
 Every message sent is logged with:
 - Model type used
 - Chat ID
 - Token count (if available)
-- Whether boost was used
 - Timestamp
 
 ### Chat Interface Features
@@ -1999,7 +1977,6 @@ Admin Tools provide platform administrators with powerful capabilities to monito
 3. **Usage Analytics View:**
    - Model usage by tier
    - Message counts per model
-   - Boost consumption
    - Paper additions per tier
    - Collection usage
    - PDF uploads
